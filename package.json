@@ -1,0 +1,22 @@
+{
+  "name": "assistant-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A dependency-free workspace for reviewing interactive HTML mockups and compiling design decisions.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "project:create": "node scripts/create-project.mjs",
+    "workspace:create": "node scripts/create-workspace.mjs",
+    "roadmap:create": "node scripts/create-roadmap.mjs",
+    "build:demo": "node scripts/export-static.mjs",
+    "validate": "node scripts/validate-content.mjs",
+    "test": "node --check server.mjs && node --check engine/review.js && node --check lib/roadmap.mjs && node --check scripts/create-roadmap.mjs && node --check scripts/browser-smoke.mjs && node --check scripts/export-static.mjs && node --check scripts/project-discovery-smoke.mjs && node --check scripts/api-smoke.mjs && node scripts/validate-content.mjs && node scripts/project-discovery-smoke.mjs && node scripts/api-smoke.mjs",
+    "test:browser": "node scripts/browser-smoke.mjs",
+    "test:api": "node scripts/api-smoke.mjs"
+  }
+}

@@ -1,0 +1,41 @@
+# CI for a private review-content repository (e.g. `ready-reviews`).
+#
+# Content repositories hold authored rounds only — no application code — and are
+# pulled onto the host by a webhook. This workflow is the gate that keeps a
+# broken round from ever reaching that host: it runs the SAME validator the
+# author runs locally, from a pinned engine release.
+#
+# Copy to .github/workflows/validate.yml in the content repository.
+name: Validate review content
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the content
+        uses: actions/checkout@v4
+        with:
+          path: content
+
+      - name: Check out the review engine
+        uses: actions/checkout@v4
+        with:
+          repository: <account>/Assistant-Workspace
+          # Pin to the engine release the host runs. Bump deliberately: the
+          # validator and the server must agree on what a valid round is.
+          ref: v0.1.0
+          path: engine
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate every project, workspace and round
+        working-directory: engine
+        env:
+          REVIEW_PROJECTS_ROOT: ${{ github.workspace }}/content/projects
+        run: npm run validate

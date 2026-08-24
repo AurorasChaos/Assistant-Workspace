@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "title": "Community events implementation roadmap",
+  "eyebrow": "Fictional demo · live delivery view",
+  "summary": "A small example showing how accepted design becomes traceable implementation work without losing the build gate.",
+  "updatedAt": "2026-08-24T12:00:00Z",
+  "updatedNote": "Registration interface integrated",
+  "branch": { "name": "feature/community-events", "base": "a1b2c3d" },
+  "metrics": [
+    { "value": "01 / 03", "label": "Phases complete" },
+    { "value": "02 / 05", "label": "Outcomes complete" },
+    { "value": "01", "label": "Agent active" },
+    { "value": "0", "label": "Production changes", "tone": "safe" }
+  ],
+  "phases": [
+    { "id": "foundation", "label": "PHASE 01", "title": "Foundation", "summary": "Contracts and fixtures", "status": "complete" },
+    { "id": "interface", "label": "PHASE 02", "title": "Interface", "summary": "Dashboard and registration", "status": "active", "detail": "1 agent active" },
+    { "id": "proof", "label": "FINAL", "title": "Prove", "summary": "Accessibility and final PR", "status": "queued" }
+  ],
+  "focus": {
+    "title": "Coordinator interface",
+    "summary": "Connect the reviewed dashboard and registration flow.",
+    "progress": 50,
+    "agents": [
+      { "mark": "UI", "name": "events_frontend", "model": "Example model", "status": "active", "detail": "Interactive coordinator workflow and responsive states." }
+    ]
+  },
+  "guardrails": [
+    { "icon": "0", "title": "No live registrations", "detail": "Demo interactions do not mutate production data." },
+    { "icon": "✓", "title": "Evidence before complete", "detail": "Each outcome records its integration commit and verification." }
+  ],
+  "lanes": [
+    {
+      "id": "lane-foundation",
+      "label": "P1",
+      "title": "Foundation",
+      "summary": "Stable event and reservation boundaries.",
+      "status": "complete",
+      "commit": "b2c3d4e",
+      "items": [
+        { "id": "P1.1", "title": "Event and capacity contracts", "status": "complete", "commit": "b2c3d4e · add event contracts", "evidence": "Contract tests green." }
+      ]
+    },
+    {
+      "id": "lane-interface",
+      "label": "P2",
+      "title": "Coordinator interface",
+      "summary": "Reviewed queue and consequence preview.",
+      "status": "active",
+      "open": true,
+      "items": [
+        { "id": "P2.1", "title": "Registration consequence preview", "status": "complete", "commit": "c3d4e5f · add registration preview", "evidence": "Focused interaction tests green." },
+        { "id": "P2.2", "title": "Responsive coordinator dashboard", "status": "active", "commit": "agent/events-frontend · pending" }
+      ]
+    },
+    {
+      "id": "lane-proof",
+      "label": "Q",
+      "title": "Independent proof",
+      "summary": "Accessibility, regression and pull-request review.",
+      "status": "queued",
+      "items": [
+        { "id": "Q1", "title": "Keyboard and narrow-screen review", "status": "queued", "commit": "pending" },
+        { "id": "Q2", "title": "Final integration gate", "status": "queued", "commit": "pending" }
+      ]
+    }
+  ],
+  "ledger": [],
+  "note": "This is fictional public-demo data. Final Review acceptance and implementation authorization remain separate decisions."
+}

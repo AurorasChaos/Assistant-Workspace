@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "id": "round-1",
+  "title": "Coordinator dashboard — round 1",
+  "shortTitle": "Dashboard · R1",
+  "summary": "Test a coordinator's event queue and the connected registration flow.",
+  "stage": "Interaction and information hierarchy",
+  "order": 10,
+  "heading": "Can a coordinator understand today and register a guest without losing context?",
+  "intro": "This fictional review demonstrates a connected prototype, region-level annotation, recommended decisions and a compiled handoff. None of its names or records refer to a real organisation.",
+  "principles": [
+    { "title": "Actions over totals", "detail": "Lead with work the coordinator can progress today." },
+    { "title": "Keep context", "detail": "Move between the queue and registration without losing the selected event." },
+    { "title": "Confirm consequences", "detail": "Show capacity and accessibility effects before reserving a place." }
+  ],
+  "mocks": [
+    {
+      "id": "dashboard",
+      "title": "Coordinator dashboard",
+      "shortTitle": "Dashboard",
+      "description": "Filter the queue, select an event and enter the connected registration flow.",
+      "file": "dashboard.html"
+    },
+    {
+      "id": "registration",
+      "title": "Guest registration",
+      "shortTitle": "Registration",
+      "description": "Choose a guest, add access needs and preview the reservation outcome.",
+      "file": "registration.html"
+    }
+  ],
+  "questions": [
+    {
+      "id": "landing-priority",
+      "title": "What should dominate the coordinator's landing view?",
+      "prompt": "The first viewport can emphasize actionable exceptions or overall programme totals.",
+      "recommended": "actions",
+      "recommendation": "Lead with events needing attention; keep totals as a compact orientation strip.",
+      "options": [
+        { "id": "actions", "label": "Action queue", "detail": "Prioritise capacity, staffing and reply work." },
+        { "id": "programme", "label": "Programme totals", "detail": "Lead with registrations, capacity and attendance trends." },
+        { "id": "calendar", "label": "Calendar", "detail": "Make the week the primary navigation model." }
+      ]
+    },
+    {
+      "id": "registration-confirmation",
+      "title": "When should a reservation be confirmed?",
+      "prompt": "Accessibility requests can affect room layout but should not create unnecessary friction.",
+      "recommended": "preview",
+      "recommendation": "Show a lightweight preview for every registration and add an explicit warning only when capacity or layout is affected.",
+      "options": [
+        { "id": "preview", "label": "Always preview", "detail": "A compact summary appears before the final reservation." },
+        { "id": "exception", "label": "Preview exceptions", "detail": "Routine reservations save immediately; exceptional ones show impact." },
+        { "id": "immediate", "label": "Save immediately", "detail": "Optimise for speed and rely on undo for corrections." }
+      ]
+    },
+    {
+      "id": "next-round",
+      "title": "What should the next round cover?",
+      "prompt": "Review completion is a design checkpoint, not build approval.",
+      "recommended": "mobile",
+      "recommendation": "Test the same connected task at mobile width before compiling the implementation specification.",
+      "options": [
+        { "id": "mobile", "label": "Mobile workflow", "detail": "Check hierarchy and task continuity on a phone." },
+        { "id": "reporting", "label": "Reporting view", "detail": "Explore attendance and capacity analysis next." },
+        { "id": "spec", "label": "Prepare specification", "detail": "Treat this round as sufficient and write the final build spec." }
+      ]
+    }
+  ],
+  "handoff": {
+    "complete": "This review is complete. Use its decisions to prepare the next design artifact, then request explicit authorization before implementation.",
+    "inProgress": "This review is still in progress. Preserve unanswered decisions and do not begin implementation."
+  }
+}
+

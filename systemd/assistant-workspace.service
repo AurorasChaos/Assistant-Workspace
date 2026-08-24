@@ -1,0 +1,18 @@
+[Unit]
+Description=Assistant Workspace multi-project review server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Projects/Assistant-Workspace
+Environment=REVIEW_HOST=127.0.0.1
+Environment=REVIEW_PORT=8777
+Environment=REVIEW_PROJECTS_ROOT=%h/.local/share/assistant-workspace/projects
+ExecStart=/usr/bin/node %h/Projects/Assistant-Workspace/server.mjs
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

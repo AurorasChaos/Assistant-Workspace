@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "id": "final-review",
+  "kind": "final",
+  "title": "Community events — Final Review",
+  "shortTitle": "Final Review",
+  "summary": "All accepted prototypes, settled decisions and the final specification in one last review gate.",
+  "stage": "Final Review",
+  "order": 1000,
+  "sourceReviews": ["round-1"],
+  "heading": "Review the complete proposal before implementation is considered.",
+  "intro": "A Final Review is mandatory. It consolidates every accepted mockup, every prior decision and the generated specification. Acceptance still does not authorize a build.",
+  "principles": [
+    { "title": "Nothing disappears", "detail": "Every source mockup and decision remains inspectable." },
+    { "title": "Contradictions are visible", "detail": "The final record must not silently choose between conflicting rounds." },
+    { "title": "Separate build gate", "detail": "Final Review acceptance is followed by an explicit implementation question." }
+  ],
+  "mocks": [
+    {
+      "id": "round-1-dashboard",
+      "sourceReview": "round-1",
+      "sourceMock": "dashboard",
+      "title": "Round 1 · Coordinator dashboard",
+      "shortTitle": "R1 · Dashboard",
+      "description": "The accepted coordinator queue and event selection flow.",
+      "file": "dashboard.html"
+    },
+    {
+      "id": "round-1-registration",
+      "sourceReview": "round-1",
+      "sourceMock": "registration",
+      "title": "Round 1 · Guest registration",
+      "shortTitle": "R1 · Registration",
+      "description": "The accepted guest selection and consequence-preview flow.",
+      "file": "registration.html"
+    }
+  ],
+  "decisions": [
+    { "id": "round-1-landing-priority", "sourceReview": "round-1", "sourceQuestion": "landing-priority", "title": "Landing priority", "outcome": "Lead with the action queue and retain programme totals as an orientation strip." },
+    { "id": "round-1-registration-confirmation", "sourceReview": "round-1", "sourceQuestion": "registration-confirmation", "title": "Registration confirmation", "outcome": "Always show a lightweight preview; escalate only when capacity or layout is affected." },
+    { "id": "round-1-next-round", "sourceReview": "round-1", "sourceQuestion": "next-round", "title": "Design sequence", "outcome": "Test the workflow at mobile width before implementation specification approval." }
+  ],
+  "artifacts": [
+    {
+      "id": "final-spec",
+      "role": "final-spec",
+      "title": "Final specification",
+      "shortTitle": "Final spec",
+      "description": "The complete implementation input generated from the accepted review decisions.",
+      "format": "markdown",
+      "file": "final-spec.md"
+    },
+    {
+      "id": "implementation-roadmap",
+      "role": "implementation-roadmap",
+      "title": "Community events implementation roadmap",
+      "shortTitle": "Live roadmap",
+      "description": "A reusable structured roadmap with phases, agents, evidence and commits.",
+      "format": "roadmap",
+      "file": "implementation-roadmap.json"
+    }
+  ],
+  "questions": [
+    {
+      "id": "final-acceptance",
+      "title": "Does this Final Review faithfully represent the agreed design?",
+      "prompt": "Acceptance closes design only. Implementation still requires a separate explicit instruction.",
+      "recommended": "accept",
+      "recommendation": "Accept only if every mockup, settled decision and specification section is present and consistent.",
+      "options": [
+        { "id": "accept", "label": "Accept Final Review", "detail": "Close design and proceed to the separate build-authorization question." },
+        { "id": "changes", "label": "Request corrections", "detail": "Correct consolidation or specification errors without reopening design unnecessarily." },
+        { "id": "new-round", "label": "Open another round", "detail": "A material design change becomes a new numbered round, followed by a replacement Final Review." }
+      ]
+    }
+  ],
+  "handoff": {
+    "complete": "Final Review is complete. Do not implement until the reviewer separately and explicitly authorizes the build.",
+    "inProgress": "Final Review remains in progress. Do not ask to begin implementation yet."
+  }
+}

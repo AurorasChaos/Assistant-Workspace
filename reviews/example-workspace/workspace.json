@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "example-workspace",
+  "title": "Community events workspace",
+  "summary": "A fictional example showing how related review rounds can live together without exposing private product material.",
+  "order": 10,
+  "tags": ["example", "public"]
+}
+

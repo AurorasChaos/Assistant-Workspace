@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Design review</title>
+  <link rel="stylesheet" href="../../../../assets/review.css">
+  <script src="../../../../assets/review.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <a id="workspace-link" class="brand" href="../../"><span class="brand-mark">AW</span><span><small>Assistant Workspace</small><b id="header-title">Loading review…</b></span></a>
+    <div class="header-progress" aria-live="polite"><span id="progress-label">Review in progress</span><b id="progress-count">0 decisions · 0 notes</b><i><span id="progress-bar"></span></i></div>
+    <div class="header-actions"><span id="save-status">Starting…</span><button id="save-now" class="button ghost" type="button">Save</button><button id="download-review" class="button ghost" type="button">Download</button><button id="complete-review" class="button primary" type="button">Mark complete</button></div>
+  </header>
+
+  <div id="conflict-banner" class="conflict-banner" hidden>
+    <div><b>Someone else saved this review.</b><span id="conflict-detail"></span></div>
+    <div class="conflict-actions"><button id="conflict-reload" class="button ghost" type="button">Load theirs</button><button id="conflict-overwrite" class="button primary" type="button">Keep mine</button></div>
+  </div>
+
+  <div class="shell">
+    <aside class="side-nav"><nav id="review-nav"></nav><footer><small>Storage</small><span id="storage-mode">Checking server…</span></footer></aside>
+    <main class="content">
+      <section id="view-overview" class="view active"></section>
+
+      <section id="view-mock" class="view mock-view">
+        <div class="mock-toolbar"><div><span class="kicker">Interactive prototype</span><h1 id="mock-title"></h1><p id="mock-description"></p></div><div class="tools"><button id="toggle-annotate" class="button annotation" type="button">＋ Annotate</button><button id="fit-mock" class="button ghost" type="button">Fit width</button><button id="open-mock" class="button ghost" type="button">Open alone ↗</button></div></div>
+        <div id="annotation-help" class="notice" hidden><b>Annotation mode is on.</b> Prototype actions are paused. Click a labelled region to attach feedback, then turn annotation mode off to continue testing the flow.</div>
+        <div class="mock-layout"><div class="frame-shell"><iframe id="mock-frame" title="Interactive design mockup" sandbox="allow-scripts allow-forms allow-modals"></iframe></div><aside class="notes-panel"><div class="panel-head"><div><span class="kicker">This screen</span><h2>Annotations</h2></div><span id="mock-note-count" class="count-pill">0</span></div><p>Resolved notes remain in the compiled record.</p><div id="mock-notes" class="notes-list"></div></aside></div>
+      </section>
+
+      <section id="view-questions" class="view"><div class="section-head"><div><span class="kicker">Outstanding decisions</span><h1>Questions for you</h1><p>Select an option, qualify it, defer it, or write your own view.</p></div></div><div id="questions-list" class="questions-list"></div><section class="custom-box"><div><h2>Add your own decision</h2><p>Capture anything the authored questions missed.</p></div><div><input id="custom-title" class="input" placeholder="Decision title"><textarea id="custom-detail" class="input" rows="3" placeholder="Your view or question…"></textarea><button id="add-custom" class="button ghost" type="button">Add to review</button></div></section></section>
+
+      <section id="view-artifact" class="view"><div class="section-head"><div><span class="kicker">Review artifact</span><h1 id="artifact-title"></h1><p id="artifact-description"></p></div><button id="open-artifact" class="button ghost" type="button">Open alone ↗</button></div><iframe id="artifact-frame" class="artifact-frame" title="Review artifact"></iframe><pre id="artifact-text" class="compiled" hidden></pre></section>
+
+      <section id="view-compiled" class="view"><div class="section-head"><div><span class="kicker">Durable handoff</span><h1>Compiled review</h1><p>Unanswered and deferred decisions remain visible.</p></div><div><button id="copy-compiled" class="button ghost" type="button">Copy</button><button id="download-compiled" class="button primary" type="button">Download Markdown</button></div></div><pre id="compiled-output" class="compiled"></pre></section>
+    </main>
+  </div>
+
+  <dialog id="annotation-dialog"><form id="annotation-form" method="dialog"><div class="dialog-head"><div><span class="kicker">Mockup annotation</span><h2 id="annotation-target-label">Selected region</h2><code id="annotation-target-key"></code></div><button class="icon-button" value="cancel" aria-label="Close">×</button></div><label>Feedback type<select id="annotation-kind" class="input"><option value="change">Change</option><option value="question">Question</option><option value="keep">Keep / like</option></select></label><label>Priority<select id="annotation-priority" class="input"><option value="must">Must have</option><option value="should" selected>Should have</option><option value="idea">Idea</option></select></label><label>Your feedback<textarea id="annotation-note" class="input" rows="6" required></textarea></label><div class="dialog-actions"><button class="button ghost" value="cancel">Cancel</button><button id="save-annotation" class="button primary" value="default">Save annotation</button></div></form></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
