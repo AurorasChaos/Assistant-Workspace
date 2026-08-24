@@ -11,6 +11,7 @@ const base = `http://127.0.0.1:${port}`;
 const secret = "test-invalidate-secret";
 const temporary = await mkdtemp(join(tmpdir(), "assistant-workspace-api-"));
 const projectsRoot = join(temporary, "projects");
+const stateRoot = join(temporary, "state");
 const failures = [];
 let child;
 
@@ -52,7 +53,7 @@ try {
   await writeProject("alpha", "ws", "round-1");
   child = spawn("node", ["server.mjs"], {
     cwd: appRoot, stdio: "ignore",
-    env: { ...process.env, REVIEW_PORT: String(port), REVIEW_PROJECTS_ROOT: projectsRoot, REVIEW_TRUSTED_PROXY: "1", REVIEW_INVALIDATE_SECRET: secret, REVIEW_INDEX_TTL_MS: "60000" },
+    env: { ...process.env, REVIEW_PORT: String(port), REVIEW_PROJECTS_ROOT: projectsRoot, REVIEW_STATE_ROOT: stateRoot, REVIEW_TRUSTED_PROXY: "1", REVIEW_INVALIDATE_SECRET: secret, REVIEW_INDEX_TTL_MS: "60000" },
   });
   await waitFor(async () => (await fetch(`${base}/`)).ok, "server start");
 
@@ -128,7 +129,14 @@ try {
   }, { "x-review-user": "reviewer@example.com", "x-review-display": "A Reviewer", "x-review-capabilities": "read,annotate,decide" });
   check("a named reviewer may record a decision", staffDecides.status === 200, String(staffDecides.status));
 
-  process.stdout.write("\n6. bridge injection\n");
+  process.stdout.write("\n6. state root override\n");
+  const { access } = await import("node:fs/promises");
+  const overridden = await access(join(stateRoot, "alpha", "ws", "round-1", "state.json")).then(() => true, () => false);
+  check("state is written under REVIEW_STATE_ROOT, not beside the content", overridden);
+  const beside = await access(join(projectsRoot, "alpha", "state")).then(() => true, () => false);
+  check("nothing is written into the content checkout", !beside);
+
+  process.stdout.write("\n7. bridge injection\n");
   const mockHtml = await fetch(`${base}/projects/alpha/groups/ws/reviews/round-1/mocks/screen/screen.html`).then((response) => response.text());
   check("every mock document carries the annotation bridge", mockHtml.includes("data-assistant-workspace-bridge"));
   check("the bridge is injected once", (mockHtml.match(/data-assistant-workspace-bridge/g) || []).length === 1);

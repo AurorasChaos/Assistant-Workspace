@@ -17,6 +17,10 @@ const maxBodyBytes = 2 * 1024 * 1024;
 const trustedProxy = process.env.REVIEW_TRUSTED_PROXY === "1";
 const indexTtlMs = Math.max(0, Number(process.env.REVIEW_INDEX_TTL_MS || 0));
 const invalidateSecret = process.env.REVIEW_INVALIDATE_SECRET || "";
+// Hosted deployments keep reviewer state on its own writable volume, away from the
+// content checkout. Setting this overrides every project's `stateRoot`, so a shared
+// content repository never has to carry a host-specific absolute path.
+const stateRootOverride = process.env.REVIEW_STATE_ROOT ? resolve(process.env.REVIEW_STATE_ROOT) : null;
 const idPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const mime = {
   ".css": "text/css; charset=utf-8",
@@ -163,7 +167,9 @@ async function discoverProjects() {
     const manifest = await optionalJson(join(directory, "project.json"));
     if (!manifest || manifest.id !== entry.name) continue;
     const projectContentRoot = resolve(directory, manifest.contentRoot || "reviews");
-    const projectDataRoot = resolve(directory, manifest.stateRoot || "state");
+    const projectDataRoot = stateRootOverride
+      ? join(stateRootOverride, entry.name)
+      : resolve(directory, manifest.stateRoot || "state");
     const project = {
       id: entry.name,
       title: manifest.title || entry.name,

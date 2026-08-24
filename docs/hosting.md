@@ -24,6 +24,7 @@ All of it is off by default, so a workstation keeps today's behaviour exactly.
 |---|---|
 | `REVIEW_TRUSTED_PROXY=1` | Trust `X-Review-User`, `X-Review-Display` and `X-Review-Capabilities` from the proxy. Set this ONLY when the engine is bound to localhost behind an authenticating proxy. |
 | `REVIEW_INDEX_TTL_MS` | Cache discovery for this many milliseconds. Unset (the default) re-reads the directory on every request, which is what a workstation wants. |
+| `REVIEW_STATE_ROOT` | Keep reviewer state under this directory (`<root>/<project>/…`) instead of beside the content. Lets a shared content repository stay free of host-specific paths. |
 | `REVIEW_INVALIDATE_SECRET` | Enables `POST /internal/invalidate` (localhost only) so the publisher can announce a change instead of the server inferring one. |
 
 Capabilities are enforced on write: `decide` records answers and completion,
