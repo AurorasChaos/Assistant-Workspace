@@ -27,8 +27,33 @@ All of it is off by default, so a workstation keeps today's behaviour exactly.
 | `REVIEW_STATE_ROOT` | Keep reviewer state under this directory (`<root>/<project>/…`) instead of beside the content. Lets a shared content repository stay free of host-specific paths. |
 | `REVIEW_INVALIDATE_SECRET` | Enables `POST /internal/invalidate` (localhost only) so the publisher can announce a change instead of the server inferring one. |
 
-Capabilities are enforced on write: `decide` records answers and completion,
-`annotate` is limited to annotations, anything less is read-only. Identity, when
+Capabilities are enforced on write, as four separate questions:
+
+| Capability | May |
+|---|---|
+| `read` | open the review |
+| `annotate` | add annotations |
+| `decide` | record an answer |
+| `complete` | declare the round settled |
+
+`decide` and `complete` are deliberately distinct: recording a decision and
+closing a round are different acts.
+
+## Agents
+
+Set `X-Review-Subject-Kind: agent` (optionally `X-Review-Agent-Model`) and the
+engine treats the caller as a machine:
+
+- `complete` is stripped from its capabilities, whatever the proxy sent;
+- every answer it writes is stored as `status: "proposed"`, carrying who proposed
+  it and when — it does not count as decided;
+- it never becomes the review's `reviewer`;
+- a round with an outstanding proposal refuses to close, with 409 and the list of
+  questions still awaiting a person.
+
+A person confirming a proposal moves it to `decided` and records them as the
+confirmer, keeping the proposal visible. Answers written before any of this
+existed have no authorship and read as human decisions, which is what they were. Identity, when
 present, is stamped on the review and on each annotation.
 
 ## Endpoints a host uses

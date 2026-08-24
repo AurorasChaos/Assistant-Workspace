@@ -43,7 +43,7 @@ function answerFor(id) {
 
 function counts() {
   const answers = pack.questions.map((question) => answerFor(question.id));
-  return { decided: answers.filter((answer) => answer.status === "decided").length, deferred: answers.filter((answer) => answer.status === "deferred").length, open: answers.filter((answer) => answer.status === "unresolved").length, notes: state.annotations.length, openNotes: state.annotations.filter((note) => !note.resolved).length };
+  return { decided: answers.filter((answer) => answer.status === "decided").length, deferred: answers.filter((answer) => answer.status === "deferred").length, proposed: answers.filter((answer) => answer.status === "proposed").length, open: answers.filter((answer) => answer.status === "unresolved").length, notes: state.annotations.length, openNotes: state.annotations.filter((note) => !note.resolved).length };
 }
 
 function toast(message) {
@@ -67,7 +67,7 @@ function updateSummary() {
   const questionBadge = $("#questions-badge");
   if (questionBadge) questionBadge.textContent = result.open + result.deferred;
   const summary = $("#summary-values");
-  if (summary) summary.innerHTML = `<div class="summary-stat"><span>Annotations</span><b>${result.notes}</b></div><div class="summary-stat"><span>Decisions</span><b>${result.decided} / ${pack.questions.length}</b></div><div class="summary-stat"><span>Deferred</span><b>${result.deferred}</b></div><div class="summary-stat"><span>Unanswered</span><b>${result.open}</b></div>`;
+  if (summary) summary.innerHTML = `<div class="summary-stat"><span>Annotations</span><b>${result.notes}</b></div><div class="summary-stat"><span>Decisions</span><b>${result.decided} / ${pack.questions.length}</b></div>${result.proposed ? `<div class="summary-stat"><span>Awaiting you</span><b>${result.proposed}</b></div>` : ""}<div class="summary-stat"><span>Deferred</span><b>${result.deferred}</b></div><div class="summary-stat"><span>Unanswered</span><b>${result.open}</b></div>`;
 }
 
 function markDirty() {
@@ -92,6 +92,16 @@ async function save(showToast = true) {
     const response = await fetch("api/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state, markdown: compileMarkdown(), baseVersion: Number(state.version || 0) }) });
     if (response.status === 409) {
       const body = await response.json().catch(() => ({}));
+      if (body.error === "proposals_outstanding") {
+        const count = (body.questions || []).length;
+        state.status = "in_progress";
+        state.completedAt = null;
+        renderQuestions();
+        updateSummary();
+        $("#save-status").textContent = "Proposals awaiting you";
+        toast(`${count} proposal${count === 1 ? "" : "s"} still awaiting you — confirm ${count === 1 ? "it" : "them"} before completing`);
+        return false;
+      }
       showConflict(body.state || null);
       return false;
     }
@@ -253,7 +263,14 @@ function renderQuestions() {
   $("#questions-list").innerHTML = pack.questions.map((question, index) => {
     const answer = answerFor(question.id);
     const options = [...question.options, { id: "own-view", label: "My own view", detail: "Use the notes field to describe a different direction." }].map((option) => `<label class="option"><input type="radio" name="q-${escapeHtml(question.id)}" value="${escapeHtml(option.id)}" ${answer.selected === option.id ? "checked" : ""}><b>${escapeHtml(option.label)}</b><p>${escapeHtml(option.detail || "")}</p></label>`).join("");
-    return `<article class="question-card" data-question="${escapeHtml(question.id)}"><div class="question-head"><div><span class="kicker">Decision ${String(index + 1).padStart(2, "0")}</span><h2>${escapeHtml(question.title)}</h2><p>${escapeHtml(question.prompt || "")}</p></div><span class="question-state">${escapeHtml(answer.status)}</span></div>${question.recommendation ? `<div class="recommendation"><b>Recommendation:</b> ${escapeHtml(question.recommendation)}</div>` : ""}<div class="options">${options}</div><div class="answer-grid"><select class="input" data-answer-status><option value="unresolved" ${answer.status === "unresolved" ? "selected" : ""}>Unresolved</option><option value="decided" ${answer.status === "decided" ? "selected" : ""}>Decided</option><option value="deferred" ${answer.status === "deferred" ? "selected" : ""}>Defer</option></select><textarea class="input" data-answer-notes rows="3" placeholder="Details, conditions or your own view…">${escapeHtml(answer.notes)}</textarea></div></article>`;
+    const proposal = answer.status === "proposed" && answer.proposedBy ? answer.proposedBy : null;
+    const proposalBlock = proposal
+      ? `<div class="proposal"><div class="proposal-head"><b>Proposed by ${escapeHtml(proposal.display || proposal.id)}</b>${proposal.model ? `<span>${escapeHtml(proposal.model)}</span>` : ""}<em>${escapeHtml(new Date(proposal.at).toLocaleString("en-GB"))}</em></div>${answer.reasoning ? `<p>${escapeHtml(answer.reasoning)}</p>` : ""}<p class="proposal-note">This is not decided until you agree with it. The round cannot be completed while it stands.</p><div class="proposal-actions"><button class="button primary" type="button" data-confirm-question="${escapeHtml(question.id)}">Confirm this</button><span>or choose a different option below</span></div></div>`
+      : "";
+    const confirmed = answer.confirmedBy && answer.proposedBy
+      ? `<div class="proposal-trace">Proposed by ${escapeHtml(answer.proposedBy.display || answer.proposedBy.id)}${answer.proposedBy.model ? ` (${escapeHtml(answer.proposedBy.model)})` : ""}, agreed by ${escapeHtml(answer.confirmedBy.display || answer.confirmedBy.id)}.</div>`
+      : "";
+    return `<article class="question-card${proposal ? " proposed" : ""}" data-question="${escapeHtml(question.id)}"><div class="question-head"><div><span class="kicker">Decision ${String(index + 1).padStart(2, "0")}</span><h2>${escapeHtml(question.title)}</h2><p>${escapeHtml(question.prompt || "")}</p></div><span class="question-state">${escapeHtml(answer.status)}</span></div>${proposalBlock}${confirmed}${question.recommendation ? `<div class="recommendation"><b>Recommendation:</b> ${escapeHtml(question.recommendation)}</div>` : ""}<div class="options">${options}</div><div class="answer-grid"><select class="input" data-answer-status><option value="unresolved" ${answer.status === "unresolved" ? "selected" : ""}>Unresolved</option><option value="decided" ${answer.status === "decided" ? "selected" : ""}>Decided</option><option value="deferred" ${answer.status === "deferred" ? "selected" : ""}>Defer</option></select><textarea class="input" data-answer-notes rows="3" placeholder="Details, conditions or your own view…">${escapeHtml(answer.notes)}</textarea></div></article>`;
   }).join("");
 }
 
@@ -325,6 +342,16 @@ function bindEvents() {
     if (!article || !event.target.matches("[data-note-action]")) return;
     const note = state.annotations.find((item) => item.id === article.dataset.noteId);
     if (note) { note.resolved = !note.resolved; markDirty(); renderNotes(); }
+  });
+  $("#questions-list").addEventListener("click", (event) => {
+    const confirm = event.target.closest("[data-confirm-question]");
+    if (!confirm) return;
+    const answer = answerFor(confirm.dataset.confirmQuestion);
+    answer.status = "decided";
+    state.answers[confirm.dataset.confirmQuestion] = answer;
+    markDirty();
+    renderQuestions();
+    toast("Recorded as your decision");
   });
   $("#questions-list").addEventListener("change", (event) => {
     const card = event.target.closest("[data-question]"); if (!card) return;

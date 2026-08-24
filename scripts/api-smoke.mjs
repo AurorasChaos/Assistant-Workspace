@@ -131,6 +131,46 @@ try {
   }, { "x-review-user": "reviewer@example.com", "x-review-display": "A Reviewer", "x-review-capabilities": "read,annotate,decide" });
   check("a named reviewer may record a decision", staffDecides.status === 200, String(staffDecides.status));
 
+  process.stdout.write("\n6. agents propose, humans decide\n");
+  const agent = { "x-review-user": "review-agent", "x-review-display": "Review Agent", "x-review-subject-kind": "agent", "x-review-agent-model": "Claude Opus 5", "x-review-capabilities": "read,annotate,decide,complete" };
+  const human = { "x-review-user": "aurora@example.com", "x-review-display": "A Reviewer", "x-review-capabilities": "read,annotate,decide,complete" };
+  const decider = { "x-review-user": "sam@example.com", "x-review-display": "Sam", "x-review-capabilities": "read,annotate,decide" };
+
+  let live = await fetch(`${base}${stateUrl.replace("/api/review", "/api/state")}`).then((r) => r.json());
+  const agentWrites = await post(stateUrl, {
+    markdown: "# proposed",
+    state: { ...live, answers: { q1: { selected: "a", status: "decided", notes: "", reasoning: "The prototype shows the checkout is fast-forward only." } } },
+    baseVersion: live.version,
+  }, agent);
+  check("an agent may record an answer", agentWrites.status === 200, String(agentWrites.status));
+  live = await fetch(`${base}${stateUrl.replace("/api/review", "/api/state")}`).then((r) => r.json());
+  check("its answer is stored as a proposal, not a decision", live.answers.q1.status === "proposed", live.answers.q1.status);
+  check("the proposal names the agent and its model", live.answers.q1.proposedBy?.kind === "agent" && live.answers.q1.proposedBy?.model === "Claude Opus 5");
+  check("an agent does not become the reviewer", live.reviewer !== "Review Agent", `reviewer is ${live.reviewer}`);
+
+  const agentCompletes = await post(stateUrl, { markdown: "# done", state: { ...live, status: "complete" }, baseVersion: live.version }, agent);
+  check("an agent may never close a round", agentCompletes.status === 403 && (await agentCompletes.json()).error === "completion_is_human_only");
+
+  const humanCompletesEarly = await post(stateUrl, { markdown: "# done", state: { ...live, status: "complete" }, baseVersion: live.version }, human);
+  const earlyBody = await humanCompletesEarly.json();
+  check("a round with a proposal outstanding refuses to close", humanCompletesEarly.status === 409 && earlyBody.error === "proposals_outstanding");
+  check("the refusal names which questions", Array.isArray(earlyBody.questions) && earlyBody.questions.includes("q1"));
+
+  const confirmed = await post(stateUrl, {
+    markdown: "# confirmed",
+    state: { ...live, answers: { q1: { ...live.answers.q1, status: "decided" } } },
+    baseVersion: live.version,
+  }, human);
+  check("a person may confirm the proposal", confirmed.status === 200, String(confirmed.status));
+  live = await fetch(`${base}${stateUrl.replace("/api/review", "/api/state")}`).then((r) => r.json());
+  check("both the proposer and the confirmer are recorded", live.answers.q1.proposedBy?.kind === "agent" && live.answers.q1.confirmedBy?.kind === "human");
+
+  const decideOnly = await post(stateUrl, { markdown: "# done", state: { ...live, status: "complete" }, baseVersion: live.version }, decider);
+  check("decide alone cannot close a round", decideOnly.status === 403 && (await decideOnly.json()).error === "complete_not_permitted");
+
+  const closed = await post(stateUrl, { markdown: "# done", state: { ...live, status: "complete" }, baseVersion: live.version }, human);
+  check("a person holding complete closes it once nothing is outstanding", closed.status === 200, String(closed.status));
+
   process.stdout.write("\n6. state root override\n");
   const { access } = await import("node:fs/promises");
   const overridden = await access(join(stateRoot, "alpha", "ws", "round-1", "state.json")).then(() => true, () => false);

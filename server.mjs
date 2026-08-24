@@ -124,21 +124,69 @@ function identityFrom(request) {
   if (typeof user !== "string" || !user) return null;
   const raw = request.headers["x-review-capabilities"];
   const capabilities = String(typeof raw === "string" ? raw : "read").split(",").map((value) => value.trim()).filter(Boolean);
+  // A machine may record decisions and may never close a round. The proxy caps
+  // capability already; this is the second place that refuses, because one layer
+  // is how a rule like this quietly stops holding.
+  const kind = request.headers["x-review-subject-kind"] === "agent" ? "agent" : "human";
   return {
     user,
     display: typeof request.headers["x-review-display"] === "string" ? request.headers["x-review-display"] : user,
-    capabilities,
+    capabilities: kind === "agent" ? capabilities.filter((value) => value !== "complete") : capabilities,
+    kind,
+    model: typeof request.headers["x-review-agent-model"] === "string" ? request.headers["x-review-agent-model"] : null,
   };
 }
 
-/** Everything a reviewer needs `decide` for. Annotations and custom questions are excluded. */
+/** What `decide` governs: the answers themselves. */
 function decisionFingerprint(state) {
   return JSON.stringify({
     answers: state?.answers || {},
-    status: state?.status || "in_progress",
     overallNotes: state?.overallNotes || "",
     customQuestions: state?.customQuestions || [],
   });
+}
+
+/** What `complete` governs: declaring the round settled. Deliberately separate —
+ *  recording a decision and closing a round are different acts, and an agent may
+ *  do the first and never the second. */
+function completionFingerprint(state) {
+  return JSON.stringify({ status: state?.status || "in_progress" });
+}
+
+/**
+ * Record who wrote each answer, and who agreed with it.
+ *
+ * An answer carried no authorship before this existed, so one without it reads as
+ * a human decision — which is what every one of them was.
+ */
+function stampAnswerAuthorship(previousAnswers, nextAnswers, identity) {
+  const previous = previousAnswers || {};
+  const result = {};
+  for (const [id, answer] of Object.entries(nextAnswers || {})) {
+    if (!answer || typeof answer !== "object") { result[id] = answer; continue; }
+    const before = previous[id];
+    const unchanged = before && JSON.stringify({ ...before, proposedBy: null, confirmedBy: null })
+      === JSON.stringify({ ...answer, proposedBy: null, confirmedBy: null });
+    if (unchanged) { result[id] = { ...before, ...answer }; continue; }
+
+    const stamp = { id: identity.user, display: identity.display, kind: identity.kind, at: new Date().toISOString(), ...(identity.model ? { model: identity.model } : {}) };
+    if (identity.kind === "agent") {
+      // An agent proposes. It never records agreement, its own or anyone else's.
+      result[id] = { ...answer, status: "proposed", proposedBy: stamp, confirmedBy: null };
+    } else {
+      // A person answering a proposal is agreeing with it or replacing it; either
+      // way the proposal stays visible in the record.
+      result[id] = { ...answer, status: answer.status === "proposed" ? "decided" : answer.status, proposedBy: before?.proposedBy ?? answer.proposedBy ?? null, confirmedBy: stamp };
+    }
+  }
+  return result;
+}
+
+/** Answers an agent has proposed and nobody has agreed with yet. */
+function outstandingProposals(state) {
+  return Object.entries(state?.answers || {})
+    .filter(([, answer]) => answer?.status === "proposed")
+    .map(([id]) => id);
 }
 
 async function discoverProjects() {
@@ -225,6 +273,7 @@ function statusFacts(review) {
     annotations: Array.isArray(review.state?.annotations) ? review.state.annotations.length : 0,
     complete: review.state?.status === "complete",
     decided: answers.filter((answer) => answer?.status === "decided").length,
+    proposed: answers.filter((answer) => answer?.status === "proposed").length,
     updated: review.state?.updatedAt
       ? new Date(review.state.updatedAt).toLocaleString("en-GB")
       : "Not started",
@@ -251,6 +300,7 @@ function buildIndex(projects) {
             status: facts.complete ? "complete" : "in_progress",
             questions,
             decided: facts.decided,
+            proposed: facts.proposed,
             openDecisions: Math.max(0, questions - facts.decided),
             annotations: facts.annotations,
             reviewer: review.state?.reviewer || null,
@@ -566,13 +616,34 @@ const server = createServer(async (request, response) => {
       const identity = identityFrom(request);
       const current = await optionalJson(join(stateDirectory, "state.json"));
 
-      // Capability: `decide` records answers and completion, `annotate` only annotates.
-      if (identity && !identity.capabilities.includes("decide")) {
+      // Capability, in three separate questions rather than one:
+      //   annotate — may change annotations
+      //   decide   — may change answers
+      //   complete — may change the round's status
+      if (identity) {
+        const decidesChanged = decisionFingerprint(current) !== decisionFingerprint(payload.state);
+        const statusChanged = completionFingerprint(current) !== completionFingerprint(payload.state);
+
         if (!identity.capabilities.includes("annotate")) {
           return send(response, 403, JSON.stringify({ error: "read_only" }), mime[".json"]);
         }
-        if (decisionFingerprint(current) !== decisionFingerprint(payload.state)) {
+        if (decidesChanged && !identity.capabilities.includes("decide")) {
           return send(response, 403, JSON.stringify({ error: "decide_not_permitted" }), mime[".json"]);
+        }
+        if (statusChanged && !identity.capabilities.includes("complete")) {
+          return send(response, 403, JSON.stringify({
+            error: identity.kind === "agent" ? "completion_is_human_only" : "complete_not_permitted",
+          }), mime[".json"]);
+        }
+      }
+
+      // A round cannot claim decisions nobody agreed to. Refuse with the count,
+      // because "three proposals still awaiting you" is actionable and
+      // "cannot complete" is not.
+      if (payload.state.status === "complete" && current?.status !== "complete") {
+        const proposals = outstandingProposals(payload.state);
+        if (proposals.length) {
+          return send(response, 409, JSON.stringify({ error: "proposals_outstanding", questions: proposals }), mime[".json"]);
         }
       }
 
@@ -585,8 +656,13 @@ const server = createServer(async (request, response) => {
 
       const next = { ...payload.state, version: currentVersion + 1 };
       if (identity) {
-        next.reviewer = identity.display;
+        // The reviewer name is a human's. An agent writing proposals must not
+        // rename the review after the person who owns it.
+        if (identity.kind !== "agent") {
+          next.reviewer = identity.display;
+        }
         next.updatedBy = identity.user;
+        next.answers = stampAnswerAuthorship(current?.answers, next.answers, identity);
         next.annotations = (Array.isArray(next.annotations) ? next.annotations : []).map((note) =>
           note && !note.author ? { ...note, author: identity.display, authorId: identity.user } : note);
       }
