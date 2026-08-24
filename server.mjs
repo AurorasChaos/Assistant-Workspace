@@ -673,6 +673,59 @@ const server = createServer(async (request, response) => {
       invalidateIndex("state", "state-changed");
       return send(response, 200, JSON.stringify({ ok: true, version: next.version }), mime[".json"]);
     }
+    // A narrow write for agents: one answer, no compiled handoff, no
+    // read-modify-write of the whole document. The full endpoint above exists for
+    // the browser, which owns the Markdown handoff; an agent has no business
+    // rewriting a human-facing artifact to record one proposal.
+    if (request.method === "POST" && suffix === "/api/propose") {
+      const payload = await readJsonBody(request);
+      const questionId = payload?.questionId;
+      if (!payload || typeof questionId !== "string" || typeof payload.selected !== "string") {
+        return send(response, 400, JSON.stringify({ error: "invalid_payload" }), mime[".json"]);
+      }
+      const identity = identityFrom(request);
+      if (!identity) return send(response, 403, JSON.stringify({ error: "identity_required" }), mime[".json"]);
+      if (!identity.capabilities.includes("decide")) {
+        return send(response, 403, JSON.stringify({ error: "decide_not_permitted" }), mime[".json"]);
+      }
+
+      const question = (review.questions || []).find((item) => item.id === questionId);
+      if (!question) return send(response, 404, JSON.stringify({ error: "unknown_question" }), mime[".json"]);
+      if (!(question.options || []).some((option) => option.id === payload.selected) && payload.selected !== "own-view") {
+        return send(response, 422, JSON.stringify({ error: "unknown_option", options: (question.options || []).map((option) => option.id) }), mime[".json"]);
+      }
+
+      const current = await optionalJson(join(stateDirectory, "state.json"));
+      const currentVersion = Number(current?.version || 0);
+      if (current && Number(payload.baseVersion ?? currentVersion) !== currentVersion) {
+        return send(response, 409, JSON.stringify({ error: "version_conflict", version: currentVersion }), mime[".json"]);
+      }
+
+      const base = current || { schema: 1, version: 0, status: "in_progress", startedAt: new Date().toISOString(), answers: {}, annotations: [], customQuestions: [], overallNotes: "", reviewer: "" };
+      const answers = { ...(base.answers || {}) };
+      answers[questionId] = {
+        ...(answers[questionId] || {}),
+        selected: payload.selected,
+        notes: typeof payload.notes === "string" ? payload.notes : answers[questionId]?.notes || "",
+        ...(typeof payload.reasoning === "string" ? { reasoning: payload.reasoning } : {}),
+        status: "decided",
+      };
+      const next = {
+        ...base,
+        answers: stampAnswerAuthorship(base.answers, answers, identity),
+        version: currentVersion + 1,
+        updatedAt: new Date().toISOString(),
+        updatedBy: identity.user,
+      };
+      await writeAtomic(join(stateDirectory, "state.json"), `${JSON.stringify(next, null, 2)}\n`);
+      invalidateIndex("state", "state-changed");
+      return send(response, 200, JSON.stringify({
+        ok: true,
+        version: next.version,
+        status: next.answers[questionId].status,
+      }), mime[".json"]);
+    }
+
     if (request.method !== "GET") return send(response, 405, "Method not allowed");
     const mockMatch = suffix.match(/^\/mocks\/([^/]+)\/(.+)$/);
     if (mockMatch) {

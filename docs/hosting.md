@@ -51,6 +51,20 @@ engine treats the caller as a machine:
 - a round with an outstanding proposal refuses to close, with 409 and the list of
   questions still awaiting a person.
 
+### Recording a proposal
+
+`POST …/reviews/<round>/api/propose` takes one answer and nothing else:
+
+```json
+{ "questionId": "seed-trigger", "selected": "first-discovery",
+  "reasoning": "…", "baseVersion": 4 }
+```
+
+It needs `decide`, refuses an unknown question or option, and refuses a stale
+`baseVersion` rather than merging it away. The full `api/review` endpoint stays
+the browser's: it rewrites the compiled Markdown handoff, which is a human-facing
+artifact an agent has no business regenerating to record one proposal.
+
 A person confirming a proposal moves it to `decided` and records them as the
 confirmer, keeping the proposal visible. Answers written before any of this
 existed have no authorship and read as human decisions, which is what they were. Identity, when

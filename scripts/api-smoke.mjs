@@ -171,6 +171,21 @@ try {
   const closed = await post(stateUrl, { markdown: "# done", state: { ...live, status: "complete" }, baseVersion: live.version }, human);
   check("a person holding complete closes it once nothing is outstanding", closed.status === 200, String(closed.status));
 
+  process.stdout.write("\n7. the narrow propose endpoint\n");
+  const proposeUrl = "/projects/alpha/groups/ws/reviews/round-1/api/propose";
+  live = await fetch(`${base}${stateUrl.replace("/api/review", "/api/state")}`).then((r) => r.json());
+  const proposed = await post(proposeUrl, { questionId: "q1", selected: "b", reasoning: "Because the round said so.", baseVersion: live.version }, agent);
+  check("an agent proposes with one call and no markdown", proposed.status === 200, String(proposed.status));
+  check("the endpoint reports it as a proposal", (await proposed.json()).status === "proposed");
+  const badOption = await post(proposeUrl, { questionId: "q1", selected: "not-an-option", baseVersion: live.version + 1 }, agent);
+  check("an option that does not exist is refused", badOption.status === 422 && (await badOption.json()).error === "unknown_option");
+  const badQuestion = await post(proposeUrl, { questionId: "nope", selected: "a", baseVersion: live.version + 1 }, agent);
+  check("a question that does not exist is refused", badQuestion.status === 404);
+  const staleWrite = await post(proposeUrl, { questionId: "q1", selected: "a", baseVersion: 0 }, agent);
+  check("a stale proposal is refused rather than merged away", staleWrite.status === 409);
+  const guestPropose = await post(proposeUrl, { questionId: "q1", selected: "a" }, { "x-review-user": "g@example.org", "x-review-capabilities": "read,annotate" });
+  check("annotate alone cannot propose", guestPropose.status === 403);
+
   process.stdout.write("\n6. state root override\n");
   const { access } = await import("node:fs/promises");
   const overridden = await access(join(stateRoot, "alpha", "ws", "round-1", "state.json")).then(() => true, () => false);
