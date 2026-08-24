@@ -10,6 +10,7 @@ let toastTimer;
 let conflict = false;
 let conflictState = null;
 let liveStream = null;
+let pendingNavigationContext = null;
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -221,6 +222,13 @@ function setAnnotationMode(on) {
 function greetFrame() {
   toFrame({ type: "assistant-workspace:hello", origin: location.origin });
   toFrame({ type: "assistant-workspace:annotation-mode", on: annotationMode });
+  deliverNavigationContext();
+}
+
+function deliverNavigationContext() {
+  if (!pendingNavigationContext || pendingNavigationContext.mockId !== currentMock) return;
+  toFrame({ ...pendingNavigationContext.data, type: "assistant-workspace:navigation-context" });
+  pendingNavigationContext = null;
 }
 
 function openAnnotationDialog(key, label) {
@@ -356,7 +364,12 @@ function bindEvents() {
     const currentSource = pack.mocks.find((mock) => mock.id === currentMock)?.sourceReview;
     const sourced = pack.mocks.find((mock) => mock.sourceReview === currentSource && mock.sourceMock === event.data.mockId);
     const target = direct || exactSource || sourced;
-    if (target) switchView("mock", target.id);
+    if (target) {
+      const sameLoadedMock = currentView === "mock" && currentMock === target.id;
+      pendingNavigationContext = { mockId: target.id, data: { ...event.data } };
+      switchView("mock", target.id);
+      if (sameLoadedMock) deliverNavigationContext();
+    }
     else if (event.data.sourceReview && event.data.sourceMock) {
       location.href = `${appUrl(`groups/${encodeURIComponent(pack.workspace.id)}/reviews/${encodeURIComponent(event.data.sourceReview)}/`)}#mock-${encodeURIComponent(event.data.sourceMock)}`;
     }

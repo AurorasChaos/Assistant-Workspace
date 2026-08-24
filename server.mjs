@@ -363,6 +363,29 @@ const bridgeScript = `<script data-assistant-workspace-bridge>
 })();
 <\/script>`;
 
+// A sandboxed document is a cross-site context: its own subresource requests
+// carry no cookies, so behind an authenticating proxy every <link> and <script src>
+// in a mock is refused while the document itself loads fine. Same-directory
+// stylesheets are therefore inlined as the document is served, which keeps the
+// sandbox, keeps the gate, and needs no change to authored prototypes.
+async function inlineMockStyles(html, directory) {
+  const links = [...html.matchAll(/<link\b[^>]*>/gi)];
+  let result = html;
+  for (const [tag] of links) {
+    if (!/rel\s*=\s*["']?stylesheet/i.test(tag)) continue;
+    const href = tag.match(/href\s*=\s*["']([^"']+)["']/i)?.[1];
+    // Only files beside the mock: anything absolute or remote is left alone.
+    if (!href || /^(https?:)?\/\//i.test(href) || href.startsWith("/") || href.includes("..")) continue;
+    const target = safeStaticPath(directory, href.split("?")[0]);
+    if (!target) continue;
+    try {
+      const css = await readFile(target, "utf8");
+      result = result.replace(tag, `<style data-inlined-from="${escapeHtml(href)}">\n${css}\n</style>`);
+    } catch { /* missing file: leave the link as authored */ }
+  }
+  return result;
+}
+
 function injectBridge(html) {
   if (html.includes("data-assistant-workspace-bridge")) return html;
   const head = html.match(/<\/head\s*>/i);
@@ -385,7 +408,8 @@ async function serveStatic(response, root, requested, { injectBridgeScript = fal
     const info = await stat(target);
     if (!info.isFile()) return send(response, 404, "Not found");
     if (injectBridgeScript && extname(target) === ".html") {
-      return send(response, 200, injectBridge(await readFile(target, "utf8")), mime[".html"]);
+      const html = await inlineMockStyles(await readFile(target, "utf8"), root);
+      return send(response, 200, injectBridge(html), mime[".html"]);
     }
     return send(response, 200, await readFile(target), mime[extname(target)] || "application/octet-stream");
   } catch (error) {

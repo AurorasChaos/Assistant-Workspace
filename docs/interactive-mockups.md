@@ -25,6 +25,8 @@ window.parent.postMessage(
 
 This keeps the sidebar, current-screen description and annotation ownership in sync. Provide a normal relative-link fallback if the mockup must also work when opened alone.
 
+Navigation messages may also carry mock-specific context such as `section` or `mode`. After switching screens, the shell forwards that payload as an `assistant-workspace:navigation-context` message to the destination frame. The destination should use it to open the requested tab or view instead of always showing its default state.
+
 When a Final Review connects screens from different source rounds, identify the source explicitly:
 
 ```js
