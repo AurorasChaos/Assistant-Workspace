@@ -365,17 +365,23 @@ const bridgeScript = `<script data-assistant-workspace-bridge>
 
 // A sandboxed document is a cross-site context: its own subresource requests
 // carry no cookies, so behind an authenticating proxy every <link> and <script src>
-// in a mock is refused while the document itself loads fine. Same-directory
-// stylesheets are therefore inlined as the document is served, which keeps the
-// sandbox, keeps the gate, and needs no change to authored prototypes.
-async function inlineMockStyles(html, directory) {
-  const links = [...html.matchAll(/<link\b[^>]*>/gi)];
+// in a mock is refused while the document itself loads fine — the prototype
+// renders unstyled and inert, with nothing in the console to explain it.
+// Same-directory stylesheets and scripts are therefore inlined as the document is
+// served, which keeps the sandbox, keeps the gate, and needs no change to
+// authored prototypes.
+function isBesideTheMock(url) {
+  // Only files beside the mock: anything absolute or remote is left as authored.
+  return Boolean(url) && !/^(https?:)?\/\//i.test(url) && !url.startsWith("/") && !url.includes("..");
+}
+
+async function inlineMockAssets(html, directory) {
   let result = html;
-  for (const [tag] of links) {
+
+  for (const [tag] of html.matchAll(/<link\b[^>]*>/gi)) {
     if (!/rel\s*=\s*["']?stylesheet/i.test(tag)) continue;
     const href = tag.match(/href\s*=\s*["']([^"']+)["']/i)?.[1];
-    // Only files beside the mock: anything absolute or remote is left alone.
-    if (!href || /^(https?:)?\/\//i.test(href) || href.startsWith("/") || href.includes("..")) continue;
+    if (!isBesideTheMock(href)) continue;
     const target = safeStaticPath(directory, href.split("?")[0]);
     if (!target) continue;
     try {
@@ -383,6 +389,22 @@ async function inlineMockStyles(html, directory) {
       result = result.replace(tag, `<style data-inlined-from="${escapeHtml(href)}">\n${css}\n</style>`);
     } catch { /* missing file: leave the link as authored */ }
   }
+
+  for (const [tag] of html.matchAll(/<script\b[^>]*\bsrc\s*=\s*["'][^"']+["'][^>]*>\s*<\/script>/gi)) {
+    // `defer` and `async` change when a script runs, and an inline script cannot
+    // express either. Leave those alone rather than silently altering ordering.
+    if (/\b(defer|async)\b/i.test(tag)) continue;
+    const src = tag.match(/src\s*=\s*["']([^"']+)["']/i)?.[1];
+    if (!isBesideTheMock(src)) continue;
+    const target = safeStaticPath(directory, src.split("?")[0]);
+    if (!target) continue;
+    try {
+      const code = await readFile(target, "utf8");
+      // A closing tag inside a string literal would end the block early.
+      result = result.replace(tag, `<script data-inlined-from="${escapeHtml(src)}">\n${code.replaceAll("</script", "<\\/script")}\n</script>`);
+    } catch { /* missing file: leave the tag as authored */ }
+  }
+
   return result;
 }
 
@@ -408,7 +430,7 @@ async function serveStatic(response, root, requested, { injectBridgeScript = fal
     const info = await stat(target);
     if (!info.isFile()) return send(response, 404, "Not found");
     if (injectBridgeScript && extname(target) === ".html") {
-      const html = await inlineMockStyles(await readFile(target, "utf8"), root);
+      const html = await inlineMockAssets(await readFile(target, "utf8"), root);
       return send(response, 200, injectBridge(html), mime[".html"]);
     }
     return send(response, 200, await readFile(target), mime[extname(target)] || "application/octet-stream");

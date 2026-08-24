@@ -36,7 +36,8 @@ async function writeProject(id, workspaceId, reviewId) {
   await writeFile(join(projectsRoot, id, "project.json"), JSON.stringify({ schemaVersion: 1, id, title: id, summary: "api smoke" }));
   await writeFile(join(projectsRoot, id, "reviews", workspaceId, "workspace.json"), JSON.stringify({ schemaVersion: 1, id: workspaceId, title: workspaceId, summary: "api smoke" }));
   await writeFile(join(reviews, "mocks", "mock.css"), ":root { --sandbox-probe: 1 }");
-  await writeFile(join(reviews, "mocks", "screen.html"), "<!doctype html><html><head><link rel=\"stylesheet\" href=\"mock.css\"></head><body><section data-review-target='a' data-review-label='A'>a</section></body></html>");
+  await writeFile(join(reviews, "mocks", "demo.js"), "window.__demoReady = true; // </script> inside a string must not end the block");
+  await writeFile(join(reviews, "mocks", "screen.html"), "<!doctype html><html><head><link rel=\"stylesheet\" href=\"mock.css\"></head><body><section data-review-target='a' data-review-label='A'>a</section><script src=\"demo.js\"></script></body></html>");
   await writeFile(join(reviews, "review.json"), JSON.stringify({
     schemaVersion: 1, id: reviewId, title: `${reviewId} title`, summary: "s", intro: "i",
     mocks: [{ id: "screen", title: "Screen", file: "screen.html" }],
@@ -142,6 +143,9 @@ try {
   check("every mock document carries the annotation bridge", mockHtml.includes("data-assistant-workspace-bridge"));
   check("same-directory stylesheets are inlined", mockHtml.includes("data-inlined-from=\"mock.css\"") && mockHtml.includes("--sandbox-probe"));
   check("the original link tag is gone", !/<link[^>]*stylesheet/i.test(mockHtml));
+  check("same-directory scripts are inlined too", mockHtml.includes('data-inlined-from="demo.js"') && mockHtml.includes("__demoReady"));
+  check("no external script tag survives", !/<script[^>]*\bsrc=/i.test(mockHtml));
+  check("a closing tag inside the script is escaped", mockHtml.includes("<\\/script"));
   check("the bridge is injected once", (mockHtml.match(/data-assistant-workspace-bridge/g) || []).length === 1);
 } finally {
   child?.kill("SIGKILL");
