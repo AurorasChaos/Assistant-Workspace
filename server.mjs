@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { renderRoadmap } from "./lib/roadmap.mjs";
+import { deliveryStateLabels, deliveryStateOf, deliveryStates, renderRoadmap, roadmapCounts } from "./lib/roadmap.mjs";
 
 const appRoot = dirname(fileURLToPath(import.meta.url));
 const contentRoot = resolve(process.env.REVIEW_CONTENT_ROOT || join(appRoot, "reviews"));
@@ -107,6 +107,11 @@ function invalidateIndex(reason, event = "content-changed") {
 }
 
 /** Discovery with an optional TTL. With no TTL configured this is a plain disk read. */
+/** A static map of the nine roadmap artifact URLs that existed before the move. */
+const roadmapRedirects = new Map(Object.entries(
+  await optionalJson(join(appRoot, "engine", "redirects.json")) || {},
+));
+
 async function getProjects() {
   if (indexTtlMs > 0 && cachedProjects && Date.now() - cachedProjectsAt < indexTtlMs) return cachedProjects;
   const projects = await discoverProjects();
@@ -247,7 +252,8 @@ async function discoverWorkspaces(project) {
     const manifest = await optionalJson(join(directory, "workspace.json"));
     if (!manifest || manifest.id !== entry.name) continue;
     const reviews = await discoverReviews(project, entry.name, directory);
-    workspaces.push({ ...manifest, directory, reviews, projectId: project.id });
+    const roadmap = await optionalJson(join(directory, "roadmap.json"));
+    workspaces.push({ ...manifest, directory, reviews, roadmap, projectId: project.id });
   }
   return workspaces.sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
 }
@@ -265,6 +271,61 @@ async function discoverReviews(project, workspaceId, workspaceDirectory) {
     reviews.push({ ...manifest, directory, stateDirectory, state });
   }
   return reviews.sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+}
+
+/**
+ * A workspace with no roadmap is still a workspace: it reports as designing from
+ * its manifest and round list alone, so nothing has to explain a gap.
+ */
+function deliveryFacts(workspace) {
+  const roadmap = workspace.roadmap;
+  const counts = roadmap ? roadmapCounts(roadmap) : { lanes: 0, phases: 0, outcomes: 0, integrated: 0, commits: 0 };
+  const state = roadmap ? deliveryStateOf(roadmap) : "designing";
+  const completions = workspace.reviews
+    .filter((review) => review.state?.status === "complete" && review.state?.updatedAt)
+    .map((review) => review.state.updatedAt)
+    .sort();
+  const activity = workspace.reviews.map((review) => review.state?.updatedAt).filter(Boolean).sort().pop() || null;
+  return {
+    state,
+    label: deliveryStateLabels[state],
+    counts,
+    hasRoadmap: Boolean(roadmap),
+    updatedAt: roadmap?.updatedAt || activity,
+    completedAt: completions.pop() || null,
+    activityAt: activity,
+    openRounds: workspace.reviews.filter((review) => review.state?.status !== "complete").length,
+    proposals: workspace.reviews.reduce((total, review) => total + outstandingProposals(review.state).length, 0),
+    percent: counts.outcomes ? Math.round((counts.integrated / counts.outcomes) * 100) : 0,
+  };
+}
+
+const ATTENTION_WINDOW_HOURS = 24;
+
+/**
+ * The band is only worth reading if it empties. Everything here is work stopped
+ * and waiting on a person; awaiting-authorization is a real backlog with no
+ * deadline, so it stays behind a toggle rather than sitting here permanently.
+ */
+function attentionReasons(workspace, facts, now = Date.now()) {
+  const reasons = [];
+  if (facts.openRounds > 0) reasons.push({ kind: "open", tone: "amber", text: `${facts.openRounds} round${facts.openRounds === 1 ? "" : "s"} still open` });
+  if (facts.state === "blocked") reasons.push({ kind: "blocked", tone: "red", text: "Roadmap blocked" });
+  if (facts.proposals > 0) reasons.push({ kind: "proposal", tone: "amber", text: `${facts.proposals} proposal${facts.proposals === 1 ? "" : "s"} awaiting a person` });
+  if (facts.state === "awaiting-authorization") reasons.push({ kind: "awaiting", tone: "amber", text: "Design closed, build never authorized" });
+  if (facts.completedAt) {
+    const hours = (now - new Date(facts.completedAt).getTime()) / 3600000;
+    if (hours >= 0 && hours <= ATTENTION_WINDOW_HOURS) reasons.push({ kind: "done", tone: "green", text: `Completed ${relativeTime(facts.completedAt, now)}` });
+  }
+  return reasons;
+}
+
+function relativeTime(value, now = Date.now()) {
+  const hours = (now - new Date(value).getTime()) / 3600000;
+  if (!Number.isFinite(hours)) return "";
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m ago`;
+  if (hours < 48) return `${Math.round(hours)}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
 }
 
 function statusFacts(review) {
@@ -308,12 +369,20 @@ function buildIndex(projects) {
             href: `projects/${project.id}/groups/${workspace.id}/reviews/${review.id}/`,
           };
         });
+        const delivery = deliveryFacts(workspace);
         return {
           id: workspace.id,
           title: workspace.title,
           summary: workspace.summary,
           tags: workspace.tags || [],
           href: `projects/${project.id}/groups/${workspace.id}/`,
+          deliveryState: delivery.state,
+          roadmap: {
+            href: `projects/${project.id}/groups/${workspace.id}/roadmap`,
+            outcomes: delivery.counts.outcomes,
+            integrated: delivery.counts.integrated,
+            updatedAt: delivery.updatedAt,
+          },
           rounds: reviews.length,
           complete: reviews.filter((review) => review.status === "complete").length,
           openDecisions: reviews.reduce((total, review) => total + review.openDecisions, 0),
@@ -328,7 +397,8 @@ function buildIndex(projects) {
 
 function page(title, content, assetHref) {
   const liveHref = assetHref.replace(/library\.css$/, "live.js");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><link rel="stylesheet" href="${assetHref}"><script src="${liveHref}" data-aw-live defer></script></head><body>${content}</body></html>`;
+  const controlsHref = assetHref.replace(/library\.css$/, "library.js");
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><link rel="stylesheet" href="${assetHref}"><script src="${liveHref}" data-aw-live defer></script><script src="${controlsHref}" defer></script></head><body>${content}</body></html>`;
 }
 
 function workspaceHref(project, workspace) {
@@ -337,20 +407,118 @@ function workspaceHref(project, workspace) {
     : `projects/${encodeURIComponent(project.id)}/groups/${encodeURIComponent(workspace.id)}/`;
 }
 
+function roadmapHref(project, workspace) {
+  return project.legacy
+    ? `groups/${encodeURIComponent(workspace.id)}/roadmap`
+    : `projects/${encodeURIComponent(project.id)}/groups/${encodeURIComponent(workspace.id)}/roadmap`;
+}
+
+function statePill(facts) {
+  return `<span class="pill state-${escapeHtml(facts.state)}">${escapeHtml(facts.label)}</span>`;
+}
+
+/**
+ * Three bands: what is waiting, how delivery is going, then the directory.
+ * Every band is rendered here with the default rule applied, so the page is
+ * correct before library.js runs and complete without it.
+ */
 function renderHome(projects) {
+  const now = Date.now();
+  const rows = projects.flatMap((project) =>
+    project.workspaces.map((workspace) => ({ project, workspace, facts: deliveryFacts(workspace) })));
+
+  const attention = rows
+    .map((row) => ({ ...row, reasons: attentionReasons(row.workspace, row.facts, now) }))
+    .filter((row) => row.reasons.length)
+    .sort((a, b) => (b.reasons.some((r) => r.kind !== "done") ? 1 : 0) - (a.reasons.some((r) => r.kind !== "done") ? 1 : 0));
+
+  const attentionCards = attention.map(({ project, workspace, facts, reasons }) => {
+    const waiting = reasons.some((reason) => reason.kind !== "done");
+    const awaitingOnly = reasons.every((reason) => reason.kind === "awaiting");
+    return `<a class="attention-row${waiting ? " waiting" : " done"}" href="${workspaceHref(project, workspace)}" data-attention data-kinds="${reasons.map((r) => r.kind).join(" ")}"${awaitingOnly ? ' data-awaiting-only="1"' : ""}>
+      <span class="who"><b>${escapeHtml(workspace.title)}</b><span>${escapeHtml(project.title)} · ${escapeHtml(relativeTime(facts.activityAt || facts.updatedAt, now))}</span></span>
+      <span class="marks">${reasons.map((reason) => `<span class="pill ${reason.tone}">${escapeHtml(reason.text)}</span>`).join("")}</span>
+    </a>`;
+  }).join("");
+
+  const attentionBand = `<section class="band" data-band="attention">
+    <div class="band-head"><div><span class="eyebrow">Band 1</span><h2>Needs attention</h2></div>
+      <label class="toggle"><input type="checkbox" data-awaiting-toggle> Include awaiting authorization</label></div>
+    <div class="attention-list">${attentionCards || '<p class="empty">Nothing is waiting on you.</p>'}</div>
+    <p class="band-note" data-attention-note></p>
+  </section>`;
+
+  const roadmapRows = rows
+    .filter((row) => row.facts.hasRoadmap)
+    .sort((a, b) => String(b.facts.updatedAt || "").localeCompare(String(a.facts.updatedAt || "")))
+    .map(({ project, workspace, facts }) => `<a class="roadmap-row" href="${roadmapHref(project, workspace)}" data-roadmap data-state="${escapeHtml(facts.state)}">
+      <span class="who"><b>${escapeHtml(workspace.roadmap.title || workspace.title)}</b><span>${escapeHtml(project.title)} · ${facts.counts.integrated}/${facts.counts.outcomes} outcomes · ${escapeHtml(relativeTime(facts.updatedAt, now))}</span></span>
+      <span class="marks">${statePill(facts)}<span class="percent">${facts.percent}%</span></span>
+    </a>`).join("");
+
+  const roadmapFilters = ["all", ...deliveryStates.filter((state) => rows.some((row) => row.facts.hasRoadmap && row.facts.state === state))];
+  const roadmapBand = `<section class="band" data-band="roadmaps">
+    <div class="band-head"><div><span class="eyebrow">Band 2</span><h2>Roadmaps</h2></div>
+      <div class="seg" role="group" aria-label="Filter roadmaps by delivery state">${roadmapFilters.map((state) =>
+        `<button type="button" data-roadmap-filter="${escapeHtml(state)}" aria-pressed="${state === "all"}">${state === "all" ? `All ${rows.filter((row) => row.facts.hasRoadmap).length}` : escapeHtml(deliveryStateLabels[state])}</button>`).join("")}</div></div>
+    <div class="roadmap-list">${roadmapRows || '<p class="empty">No roadmaps yet.</p>'}</div>
+  </section>`;
+
   const sections = projects.map((project) => {
-    const cards = project.workspaces.map((workspace) => {
-      const completed = workspace.reviews.filter((review) => statusFacts(review).complete).length;
-      return `<article class="workspace-card">
-        <div class="card-top"><span class="eyebrow">${escapeHtml(project.title)}</span><span class="count">${workspace.reviews.length} round${workspace.reviews.length === 1 ? "" : "s"}</span></div>
+    const ordered = [...project.workspaces].sort((a, b) => {
+      const fa = deliveryFacts(a);
+      const fb = deliveryFacts(b);
+      if ((fb.openRounds > 0) !== (fa.openRounds > 0)) return (fb.openRounds > 0) - (fa.openRounds > 0);
+      const byActivity = String(fb.activityAt || "").localeCompare(String(fa.activityAt || ""));
+      if (byActivity) return byActivity;
+      return Number(a.order || 0) - Number(b.order || 0);
+    });
+
+    if (!ordered.length) {
+      return `<section class="project-section empty-project"><div class="project-head compact"><div><span class="eyebrow">Project</span><h2>${escapeHtml(project.title)}</h2></div><span class="count">no workspaces yet · /${escapeHtml(project.id)}</span></div></section>`;
+    }
+
+    const cards = ordered.map((workspace) => {
+      const facts = deliveryFacts(workspace);
+      const tags = (workspace.tags || []).slice(0, 3);
+      return `<article class="workspace-card${facts.openRounds ? " open" : ""}">
+        <div class="card-top"><span class="eyebrow">${escapeHtml(project.title)}</span><span class="count">${workspace.reviews.length} round${workspace.reviews.length === 1 ? "" : "s"} · ${escapeHtml(relativeTime(facts.activityAt || facts.updatedAt, now))}</span></div>
         <h2>${escapeHtml(workspace.title)}</h2><p>${escapeHtml(workspace.summary)}</p>
-        <div class="facts"><span><b>${completed}</b> complete</span><span><b>${workspace.reviews.length - completed}</b> open</span></div>
-        <a class="button" href="${workspaceHref(project, workspace)}">Open workspace →</a>
+        <div class="marks">${statePill(facts)}${facts.openRounds ? `<span class="pill amber">${facts.openRounds} open</span>` : ""}${facts.counts.outcomes ? `<span class="pill">${facts.counts.integrated} of ${facts.counts.outcomes} integrated</span>` : ""}</div>
+        ${tags.length ? `<div class="tags">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
+        <div class="card-actions"><a class="button" href="${workspaceHref(project, workspace)}">Open workspace →</a>${facts.hasRoadmap ? `<a class="button ghost" href="${roadmapHref(project, workspace)}">Roadmap</a>` : ""}</div>
       </article>`;
     }).join("");
-    return `<section class="project-section"><div class="project-head"><div><span class="eyebrow">Project</span><h2>${escapeHtml(project.title)}</h2><p>${escapeHtml(project.summary)}</p></div><span class="count">/${escapeHtml(project.id)}</span></div><section class="grid">${cards || '<div class="empty">This project has no workspaces yet.</div>'}</section></section>`;
+
+    return `<section class="project-section"><div class="project-head"><div><span class="eyebrow">Project</span><h2>${escapeHtml(project.title)}</h2><p>${escapeHtml(project.summary)}</p></div><span class="count"><a href="${project.legacy ? "" : `projects/${encodeURIComponent(project.id)}/roadmap`}">/${escapeHtml(project.id)}</a></span></div><section class="grid">${cards}</section></section>`;
   }).join("");
-  return page("Assistant Workspace", `<main class="wrap"><header><span class="eyebrow">One server · project workspaces</span><h1>Assistant Workspace</h1><p>Atlas, Beacon, Harbour and future projects each contain durable pieces of work that any authorized agent can continue.</p></header><aside class="notice"><b>Build gate:</b> completing a review records design decisions. It never authorizes implementation.</aside>${sections || '<section class="grid"><div class="empty">No projects found. Create one with npm run project:create.</div></section>'}</main>`, "assets/library.css");
+
+  const body = `<main class="wrap"><header><span class="eyebrow">One server · project workspaces</span><h1>Assistant Workspace</h1><p>Every project below contains durable pieces of work that any authorized agent can continue.</p></header><aside class="notice"><b>Build gate:</b> completing a review records design decisions. It never authorizes implementation.</aside>${attentionBand}${roadmapBand}<section class="band" data-band="projects"><div class="band-head"><div><span class="eyebrow">Band 3</span><h2>Projects and workspaces</h2></div></div>${sections || '<section class="grid"><div class="empty">No projects found. Create one with npm run project:create.</div></section>'}</section></main>`;
+  return page("Assistant Workspace", body, "assets/library.css");
+}
+
+/** Derived from the workspace roadmaps. Nothing is authored at project level. */
+function renderProjectRoadmap(project) {
+  const now = Date.now();
+  const rows = project.workspaces.map((workspace) => ({ workspace, facts: deliveryFacts(workspace) }));
+  const totals = deliveryStates.map((state) => ({ state, count: rows.filter((row) => row.facts.state === state).length })).filter((entry) => entry.count);
+  const outcomes = rows.reduce((total, row) => total + row.facts.counts.outcomes, 0);
+  const integrated = rows.reduce((total, row) => total + row.facts.counts.integrated, 0);
+
+  const cards = rows
+    .sort((a, b) => String(b.facts.updatedAt || "").localeCompare(String(a.facts.updatedAt || "")))
+    .map(({ workspace, facts }) => `<article class="workspace-card">
+      <div class="card-top"><span class="eyebrow">${workspace.reviews.length} round${workspace.reviews.length === 1 ? "" : "s"}</span><span class="count">${escapeHtml(relativeTime(facts.updatedAt, now))}</span></div>
+      <h2>${escapeHtml(workspace.title)}</h2><p>${escapeHtml(workspace.summary)}</p>
+      <div class="marks">${statePill(facts)}${facts.counts.outcomes ? `<span class="pill">${facts.counts.integrated} of ${facts.counts.outcomes} integrated</span>` : ""}${facts.hasRoadmap ? "" : '<span class="pill">no roadmap yet</span>'}</div>
+      <div class="card-actions"><a class="button" href="groups/${encodeURIComponent(workspace.id)}/">Open workspace →</a>${facts.hasRoadmap ? `<a class="button ghost" href="groups/${encodeURIComponent(workspace.id)}/roadmap">Roadmap</a>` : ""}</div>
+    </article>`).join("");
+
+  const body = `<main class="wrap"><nav><a href="../../">← All projects</a></nav><header><span class="eyebrow">${escapeHtml(project.title)} · Programme</span><h1>${escapeHtml(project.title)}</h1><p>${escapeHtml(project.summary)}</p></header>
+    <aside class="notice"><b>Derived view.</b> Every figure here is read from the workspace roadmaps on request. There is no project-level file to keep in step.</aside>
+    <section class="facts-row">${totals.map((entry) => `<div class="fact"><span>${escapeHtml(deliveryStateLabels[entry.state])}</span><b>${entry.count}</b></div>`).join("")}<div class="fact"><span>Outcomes integrated</span><b>${integrated} of ${outcomes}</b></div></section>
+    <section class="grid">${cards || '<div class="empty">This project has no workspaces yet.</div>'}</section></main>`;
+  return page(`${project.title} — programme`, body, "../assets/library.css");
 }
 
 function renderWorkspace(project, workspace) {
@@ -365,7 +533,11 @@ function renderWorkspace(project, workspace) {
   }).join("");
   const assetHref = project.legacy ? "../../assets/library.css" : "../../../../assets/library.css";
   const homeHref = project.legacy ? "../../" : "../../../../";
-  return page(workspace.title, `<main class="wrap"><nav><a href="${homeHref}">← All projects</a></nav><header><span class="eyebrow">${escapeHtml(project.title)} · Workspace</span><h1>${escapeHtml(workspace.title)}</h1><p>${escapeHtml(workspace.summary)}</p></header><section class="grid">${cards || '<div class="empty">This workspace has no rounds yet.</div>'}</section></main>`, assetHref);
+  const facts = deliveryFacts(workspace);
+  const roadmapLink = facts.hasRoadmap
+    ? `<a class="button ghost" href="roadmap">Roadmap · ${escapeHtml(facts.label)}${facts.counts.outcomes ? ` · ${facts.counts.integrated}/${facts.counts.outcomes}` : ""}</a>`
+    : "";
+  return page(workspace.title, `<main class="wrap"><nav><a href="${homeHref}">← All projects</a></nav><header><span class="eyebrow">${escapeHtml(project.title)} · Workspace</span><h1>${escapeHtml(workspace.title)}</h1><p>${escapeHtml(workspace.summary)}</p><div class="marks">${statePill(facts)}${roadmapLink}</div></header><section class="grid">${cards || '<div class="empty">This workspace has no rounds yet.</div>'}</section></main>`, assetHref);
 }
 
 // Injected into every mock document. The mock frame is sandboxed, so it runs on an
@@ -555,6 +727,49 @@ const server = createServer(async (request, response) => {
     const projectAssetMatch = url.pathname.match(/^\/projects\/[^/]+\/assets\/(.+)$/);
     if (request.method === "GET" && projectAssetMatch) {
       return serveStatic(response, join(appRoot, "engine"), projectAssetMatch[1]);
+    }
+
+    const projectRoadmapMatch = url.pathname.match(/^\/projects\/([^/]+)\/roadmap\/?$/);
+    if (request.method === "GET" && projectRoadmapMatch) {
+      const project = findProject(projects, decodeURIComponent(projectRoadmapMatch[1]));
+      return project
+        ? send(response, 200, renderProjectRoadmap(project), mime[".html"])
+        : send(response, 404, "Project not found");
+    }
+
+    const workspaceRoadmapMatch = url.pathname.match(/^\/projects\/([^/]+)\/groups\/([^/]+)\/roadmap\/?$/);
+    const legacyRoadmapMatch = url.pathname.match(/^\/groups\/([^/]+)\/roadmap\/?$/);
+    if (request.method === "GET" && (workspaceRoadmapMatch || legacyRoadmapMatch)) {
+      let workspace;
+      if (workspaceRoadmapMatch) {
+        const project = findProject(projects, decodeURIComponent(workspaceRoadmapMatch[1]));
+        workspace = findWorkspace(project, decodeURIComponent(workspaceRoadmapMatch[2]));
+      } else {
+        workspace = findUniqueWorkspace(projects, decodeURIComponent(legacyRoadmapMatch[1]))?.workspace;
+      }
+      if (!workspace) return send(response, 404, "Workspace not found");
+      if (!workspace.roadmap) return send(response, 404, "This workspace has no roadmap yet");
+      try {
+        return send(response, 200, renderRoadmap(workspace.roadmap), mime[".html"]);
+      } catch (error) {
+        return send(response, 500, `Roadmap could not be rendered.\n\n${error.message}`);
+      }
+    }
+
+    // The roadmap moved out of the Final Review it was authored in. Those URLs are
+    // in commit messages and handoffs, so they redirect rather than 404 — there is
+    // no future date on which breaking them is worth anything.
+    const legacyArtifactMatch = url.pathname.match(/^\/projects\/([^/]+)\/groups\/([^/]+)\/reviews\/[^/]+\/artifacts\/([^/]+)$/);
+    if (request.method === "GET" && legacyArtifactMatch && roadmapRedirects.has(url.pathname)) {
+      // Only once the workspace actually holds the roadmap. Engine and content
+      // deploy independently, so redirecting before the file has landed would
+      // turn a working artifact URL into a 404 for the length of the gap.
+      const redirectProject = findProject(projects, decodeURIComponent(legacyArtifactMatch[1]));
+      const redirectWorkspace = findWorkspace(redirectProject, decodeURIComponent(legacyArtifactMatch[2]));
+      if (redirectWorkspace?.roadmap) {
+        response.writeHead(301, { Location: roadmapRedirects.get(url.pathname) });
+        return response.end();
+      }
     }
 
     const projectWorkspaceMatch = url.pathname.match(/^\/projects\/([^/]+)\/groups\/([^/]+)\/?$/);

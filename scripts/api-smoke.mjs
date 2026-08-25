@@ -38,6 +38,12 @@ async function writeProject(id, workspaceId, reviewId) {
   await writeFile(join(reviews, "mocks", "mock.css"), ":root { --sandbox-probe: 1 }");
   await writeFile(join(reviews, "mocks", "demo.js"), "window.__demoReady = true; // </script> inside a string must not end the block");
   await writeFile(join(reviews, "mocks", "screen.html"), "<!doctype html><html><head><link rel=\"stylesheet\" href=\"mock.css\"></head><body><section data-review-target='a' data-review-label='A'>a</section><script src=\"demo.js\"></script></body></html>");
+  await writeFile(join(projectsRoot, id, "reviews", workspaceId, "roadmap.json"), JSON.stringify({
+    schemaVersion: 2, title: `${workspaceId} roadmap`, summary: "api smoke roadmap",
+    deliveryState: "building", sourceReviews: [reviewId],
+    phases: [{ id: "p1", title: "Phase", status: "active" }],
+    lanes: [{ id: "l1", title: "Lane", status: "active", items: [{ id: "i1", title: "Outcome", status: "complete", commit: "abc1234" }] }],
+  }));
   await writeFile(join(reviews, "review.json"), JSON.stringify({
     schemaVersion: 1, id: reviewId, title: `${reviewId} title`, summary: "s", intro: "i",
     mocks: [{ id: "screen", title: "Screen", file: "screen.html" }],
@@ -193,7 +199,27 @@ try {
   const beside = await access(join(projectsRoot, "alpha", "state")).then(() => true, () => false);
   check("nothing is written into the content checkout", !beside);
 
-  process.stdout.write("\n7. bridge injection\n");
+  process.stdout.write("\n7. workspace roadmaps\n");
+  const roadmapHtml = await fetch(`${base}/projects/alpha/groups/ws/roadmap`).then((response) => response.text());
+  check("a workspace roadmap renders at /groups/<w>/roadmap", roadmapHtml.includes("ws roadmap"));
+  check("the delivery state is on the page", roadmapHtml.includes("Building"));
+  check("the reviews it implements are named", roadmapHtml.includes("implements"));
+  const projectRoadmap = await fetch(`${base}/projects/alpha/roadmap`).then((response) => response.text());
+  check("the project view is derived from them", projectRoadmap.includes("Derived view") && projectRoadmap.includes("ws"));
+  const missing = await fetch(`${base}/projects/alpha/groups/nope/roadmap`);
+  check("an unknown workspace roadmap is a 404", missing.status === 404);
+
+  const home = await fetch(`${base}/`).then((response) => response.text());
+  check("the home page renders three bands", ["attention", "roadmaps", "projects"].every((band) => home.includes(`data-band="${band}"`)));
+  check("every band is complete before any script runs", !home.includes(" hidden") && home.includes("data-roadmap "));
+  check("the delivery state reaches the workspace card", home.includes('class="pill state-building"'));
+
+  const indexAfterRoadmap = await fetch(`${base}/api/index.json`).then((response) => response.json());
+  const indexed = indexAfterRoadmap.projects[0].workspaces[0];
+  check("the index keeps every existing key", ["id", "title", "summary", "tags", "href", "rounds", "complete", "openDecisions", "annotations", "reviews"].every((key) => key in indexed));
+  check("the index gains deliveryState and roadmap", indexed.deliveryState === "building" && indexed.roadmap.outcomes === 1 && indexed.roadmap.integrated === 1);
+
+  process.stdout.write("\n8. bridge injection\n");
   const mockHtml = await fetch(`${base}/projects/alpha/groups/ws/reviews/round-1/mocks/screen/screen.html`).then((response) => response.text());
   check("every mock document carries the annotation bridge", mockHtml.includes("data-assistant-workspace-bridge"));
   check("same-directory stylesheets are inlined", mockHtml.includes("data-inlined-from=\"mock.css\"") && mockHtml.includes("--sandbox-probe"));

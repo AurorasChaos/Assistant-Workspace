@@ -1,12 +1,14 @@
 import { access, readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { validateRoadmap } from "../lib/roadmap.mjs";
+import { roadmapWarnings, validateRoadmap } from "../lib/roadmap.mjs";
 
 const contentRoot = resolve(process.env.REVIEW_CONTENT_ROOT || new URL("../reviews", import.meta.url).pathname);
 const projectsRoot = process.env.REVIEW_PROJECTS_ROOT ? resolve(process.env.REVIEW_PROJECTS_ROOT) : null;
 const idPattern = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const errors = [];
+const warnings = [];
 let workspaceCount = 0;
+let roadmapCount = 0;
 let reviewCount = 0;
 let projectCount = 0;
 
@@ -48,6 +50,24 @@ for (const workspaceEntry of await readdir(projectSource.contentRoot, { withFile
   if (!workspace.title || !workspace.summary) errors.push(`${workspacePath}: title and summary are required`);
   // Named reviewers gate hosted access (ADMIN is implicit). A malformed list must
   // fail here rather than silently denying everyone at the proxy.
+  // The roadmap is a property of the workspace now. At most one, valid, naming
+  // reviews that exist, and never left behind inside a review.
+  const roadmapPath = join(workspacePath, "roadmap.json");
+  let roadmap = null;
+  try { await access(roadmapPath); roadmap = await json(roadmapPath); } catch { roadmap = null; }
+  if (roadmap) {
+    roadmapCount += 1;
+    errors.push(...validateRoadmap(roadmap, roadmapPath));
+    warnings.push(...roadmapWarnings(roadmap, roadmapPath));
+    for (const sourceId of roadmap.sourceReviews || []) {
+      try { await access(join(workspacePath, sourceId, "review.json")); }
+      catch { errors.push(`${roadmapPath}: sourceReviews names ${sourceId}, which is not a review in this workspace`); }
+    }
+  }
+  for (const stray of ["implementation-roadmap.json", "roadmap-2.json"]) {
+    try { await access(join(workspacePath, stray)); errors.push(`${workspacePath}: ${stray} — a workspace has exactly one roadmap.json`); } catch { /* expected */ }
+  }
+
   if (workspace.reviewers !== undefined) {
     if (!Array.isArray(workspace.reviewers) || workspace.reviewers.some((entry) => typeof entry !== "string" || !entry.includes("@"))) {
       errors.push(`${workspacePath}: reviewers must be an array of email addresses`);
@@ -80,9 +100,9 @@ for (const workspaceEntry of await readdir(projectSource.contentRoot, { withFile
       if (!idPattern.test(artifact.id || "") || !artifact.title || !artifact.file) errors.push(`${reviewPath}: every artifact requires a kebab-case id, title and file`);
       try { await access(join(reviewPath, "artifacts", artifact.file)); } catch { errors.push(`${reviewPath}: missing artifact file ${artifact.file}`); }
       if (artifact.format === "roadmap") {
-        const roadmapPath = join(reviewPath, "artifacts", artifact.file);
-        const roadmap = await json(roadmapPath);
-        if (roadmap) errors.push(...validateRoadmap(roadmap, roadmapPath));
+        // Warn, not fail: this fires on any content branch authored before the
+        // migration merged, including one that was correct when it was written.
+        warnings.push(`${reviewPath}: artifact ${artifact.id} is still a format:"roadmap" review artifact — roadmaps belong at the workspace root`);
       }
     }
     if (review.kind === "final") {
@@ -103,9 +123,12 @@ for (const workspaceEntry of await readdir(projectSource.contentRoot, { withFile
 }
 }
 
+if (warnings.length) {
+  process.stdout.write(`${warnings.map((warning) => `- warn  ${warning}`).join("\n")}\n`);
+}
 if (errors.length) {
   process.stderr.write(`${errors.map((error) => `- ${error}`).join("\n")}\n`);
   process.exitCode = 1;
 } else {
-  process.stdout.write(`Validated ${projectCount} project(s), ${workspaceCount} workspace(s) and ${reviewCount} review(s).\n`);
+  process.stdout.write(`Validated ${projectCount} project(s), ${workspaceCount} workspace(s), ${reviewCount} review(s) and ${roadmapCount} roadmap(s)${warnings.length ? ` with ${warnings.length} warning(s)` : ""}.\n`);
 }

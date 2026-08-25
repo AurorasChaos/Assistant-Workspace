@@ -35,7 +35,7 @@ The system service uses `REVIEW_PROJECTS_ROOT=~/.local/share/assistant-workspace
 
 ```bash
 REVIEW_PROJECTS_ROOT=~/.local/share/assistant-workspace/projects npm run project:create -- <project-id> "Project title"
-REVIEW_PROJECTS_ROOT=~/.local/share/assistant-workspace/projects npm run workspace:create -- <project-id> <workspace-id> "Workspace title"
+REVIEW_PROJECTS_ROOT=~/.local/share/assistant-workspace/projects npm run workspace:create -- <project-id> <workspace-id> "Workspace title"   # seeds roadmap.json
 REVIEW_PROJECTS_ROOT=~/.local/share/assistant-workspace/projects npm run validate
 ```
 

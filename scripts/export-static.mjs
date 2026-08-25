@@ -55,6 +55,14 @@ try {
     await mkdir(workspaceOutput, { recursive: true });
     await writeFile(join(workspaceOutput, "index.html"), await fetchText(`/groups/${encodeURIComponent(workspace.id)}/`), "utf8");
 
+    // The roadmap is a workspace file now, so it exports beside the workspace page
+    // rather than inside whichever review happened to author it.
+    try {
+      await readJson(join(workspaceDirectory, "roadmap.json"));
+      await mkdir(join(workspaceOutput, "roadmap"), { recursive: true });
+      await writeFile(join(workspaceOutput, "roadmap", "index.html"), await fetchText(`/groups/${encodeURIComponent(workspace.id)}/roadmap`), "utf8");
+    } catch { /* a workspace need not have one */ }
+
     const reviewEntries = await readdir(workspaceDirectory, { withFileTypes: true });
     for (const reviewEntry of reviewEntries) {
       if (!reviewEntry.isDirectory()) continue;

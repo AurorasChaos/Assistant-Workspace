@@ -17,6 +17,7 @@
     "validate": "node scripts/validate-content.mjs",
     "test": "node --check server.mjs && node --check engine/review.js && node --check lib/roadmap.mjs && node --check scripts/create-roadmap.mjs && node --check scripts/browser-smoke.mjs && node --check scripts/export-static.mjs && node --check scripts/project-discovery-smoke.mjs && node --check scripts/api-smoke.mjs && node scripts/validate-content.mjs && node scripts/project-discovery-smoke.mjs && node scripts/api-smoke.mjs",
     "test:browser": "node scripts/browser-smoke.mjs",
-    "test:api": "node scripts/api-smoke.mjs"
+    "test:api": "node scripts/api-smoke.mjs",
+    "roadmap:backfill": "node scripts/backfill-roadmaps.mjs"
   }
 }

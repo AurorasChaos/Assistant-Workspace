@@ -1,7 +1,12 @@
 # Follow-up: workstreams and one roadmap per project
 
-**Status:** captured, not designed. Raised 24 August 2026 while the hosted
-Assistant Workspace build was in flight. Deliberately not folded into that work.
+**Status:** the roadmap half is now in design. Raised 24 August 2026 while the
+hosted Assistant Workspace build was in flight. The workstream (review-series)
+layer below is still captured-not-designed; where the roadmap lives is being
+decided in `assistant-workspace/roadmap-placement`, round 1, opened 25 August
+2026. That round proposes one roadmap per *workspace* with the project-level
+view **derived** from them, rather than the single authored per-project file
+proposed here — see its question `project-rollup` for why.
 
 ## The problem
 

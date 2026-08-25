@@ -83,6 +83,7 @@ npm start              # local server with file autosave
 npm test               # syntax and content-contract validation
 npm run test:browser   # real Firefox interaction smoke test
 npm run build:demo     # static GitHub Pages export
+npm run roadmap:backfill  # move review-owned roadmaps to the workspace root (dry run)
 ```
 
 Runtime configuration:
@@ -105,10 +106,13 @@ For a persistent multi-project workstation, prefer `REVIEW_PROJECTS_ROOT`. One s
 Create durable project and workspace folders with:
 
 ```bash
-REVIEW_PROJECTS_ROOT=/path/to/projects npm run project:create -- beacon "Beacon"
+REVIEW_PROJECTS_ROOT=/path/to/projects npm run project:create -- beacon "Beacon" --content-root /path/to/content-repo/projects/beacon/reviews
 REVIEW_PROJECTS_ROOT=/path/to/projects npm run workspace:create -- beacon field-operations "Field operations"
-REVIEW_PROJECTS_ROOT=/path/to/projects npm run roadmap:create -- atlas billing-workspace final-review
 ```
+
+`workspace:create` resolves the content root from the project manifest, so a
+project whose `contentRoot` points at a separate content repository scaffolds into
+that repository rather than beside the manifest. It seeds `roadmap.json` too.
 
 ## Content model
 
@@ -116,6 +120,7 @@ REVIEW_PROJECTS_ROOT=/path/to/projects npm run roadmap:create -- atlas billing-w
 reviews/
   example-workspace/
     workspace.json
+    roadmap.json
     round-1/
       review.json
       mocks/
@@ -127,6 +132,9 @@ reviews/
         final-spec.md
 ```
 
+The roadmap is a property of the workspace, not of any one review, so it survives
+a replacement Final Review and keeps a single shareable URL.
+
 In multi-project mode, the same workspace structure sits under each project manifest’s `contentRoot`. See [Project namespaces](docs/projects.md).
 
 Generated reviewer state is stored separately under `.review-data/<workspace>/<round>/` and ignored by Git.
@@ -134,8 +142,10 @@ Generated reviewer state is stored separately under `.review-data/<workspace>/<r
 Stable application paths:
 
 ```text
-/                                      workspace library
+/                                      workspace library — needs attention, roadmaps, projects
+/projects/<project>/roadmap            derived programme view for one project
 /groups/<workspace>/                   workspace history
+/groups/<workspace>/roadmap            the workspace's implementation roadmap
 /groups/<workspace>/reviews/<round>/   one review round
 ```
 
