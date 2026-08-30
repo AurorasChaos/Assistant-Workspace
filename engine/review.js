@@ -27,6 +27,15 @@ function escapeHtml(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 }
 
+function paras(text) {
+  return String(text || "")
+    .split(/\n{2,}/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map((t) => `<p>${escapeHtml(t)}</p>`)
+    .join("");
+}
+
 function blankState() {
   return { schema: 1, version: 0, status: "in_progress", startedAt: nowIso(), updatedAt: nowIso(), completedAt: null, reviewer: "", overallNotes: "", answers: {}, annotations: [], customQuestions: [] };
 }
@@ -166,7 +175,7 @@ function renderOverview() {
   const principles = (pack.principles || []).map((principle, index) => `<article class="principle"><span>${String(index + 1).padStart(2, "0")}</span><h3>${escapeHtml(principle.title)}</h3><p>${escapeHtml(principle.detail)}</p></article>`).join("");
   const decisions = (pack.decisions || []).map((decision) => `<div class="settled-decision"><b>${escapeHtml(decision.title)}</b><span>${escapeHtml(decision.outcome)}</span></div>`).join("");
   const register = decisions ? `<section class="decision-register"><span class="kicker">Consolidated record</span><h2>Settled decisions</h2>${decisions}</section>` : "";
-  $("#view-overview").innerHTML = `<div class="intro-grid"><article class="intro-copy"><span class="kicker">${escapeHtml(pack.stage || "Design review")}</span><h1>${escapeHtml(pack.heading || pack.title)}</h1><p>${escapeHtml(pack.intro || pack.summary)}</p><div class="notice"><b>Build gate:</b> completing this review records decisions only. It does not authorize product implementation.</div><ol><li>Use the prototype normally first. Its controls should demonstrate the connected flow.</li><li>Turn on annotation mode when you want to mark a specific region.</li><li>Answer the authored questions or add your own view.</li><li>Mark complete to create a Markdown handoff.</li></ol>${register}</article><aside class="summary-panel"><h2>Review state</h2><div id="summary-values"></div><label class="field">Reviewer<input id="reviewer" class="input" value="${escapeHtml(state.reviewer)}" placeholder="Optional name"></label><label class="field">Overall direction<textarea id="overall-notes" class="input" rows="5" placeholder="Context that should guide the whole review…">${escapeHtml(state.overallNotes)}</textarea></label></aside></div><div class="principles">${principles}</div>`;
+  $("#view-overview").innerHTML = `<div class="intro-grid"><article class="intro-copy"><span class="kicker">${escapeHtml(pack.stage || "Design review")}</span><h1>${escapeHtml(pack.heading || pack.title)}</h1>${paras(pack.intro || pack.summary)}<div class="notice"><b>Build gate:</b> completing this review records decisions only. It does not authorize product implementation.</div><ol><li>Use the prototype normally first. Its controls should demonstrate the connected flow.</li><li>Turn on annotation mode when you want to mark a specific region.</li><li>Answer the authored questions or add your own view.</li><li>Mark complete to create a Markdown handoff.</li></ol>${register}</article><aside class="summary-panel"><h2>Review state</h2><div id="summary-values"></div><label class="field">Reviewer<input id="reviewer" class="input" value="${escapeHtml(state.reviewer)}" placeholder="Optional name"></label><label class="field">Overall direction<textarea id="overall-notes" class="input" rows="5" placeholder="Context that should guide the whole review…">${escapeHtml(state.overallNotes)}</textarea></label></aside></div><div class="principles">${principles}</div>`;
   $("#reviewer").addEventListener("input", (event) => { state.reviewer = event.target.value; markDirty(); });
   $("#overall-notes").addEventListener("input", (event) => { state.overallNotes = event.target.value; markDirty(); });
   updateSummary();
@@ -270,7 +279,7 @@ function renderQuestions() {
     const confirmed = answer.confirmedBy && answer.proposedBy
       ? `<div class="proposal-trace">Proposed by ${escapeHtml(answer.proposedBy.display || answer.proposedBy.id)}${answer.proposedBy.model ? ` (${escapeHtml(answer.proposedBy.model)})` : ""}, agreed by ${escapeHtml(answer.confirmedBy.display || answer.confirmedBy.id)}.</div>`
       : "";
-    return `<article class="question-card${proposal ? " proposed" : ""}" data-question="${escapeHtml(question.id)}"><div class="question-head"><div><span class="kicker">Decision ${String(index + 1).padStart(2, "0")}</span><h2>${escapeHtml(question.title)}</h2><p>${escapeHtml(question.prompt || "")}</p></div><span class="question-state">${escapeHtml(answer.status)}</span></div>${proposalBlock}${confirmed}${question.recommendation ? `<div class="recommendation"><b>Recommendation:</b> ${escapeHtml(question.recommendation)}</div>` : ""}<div class="options">${options}</div><div class="answer-grid"><select class="input" data-answer-status><option value="unresolved" ${answer.status === "unresolved" ? "selected" : ""}>Unresolved</option><option value="decided" ${answer.status === "decided" ? "selected" : ""}>Decided</option><option value="deferred" ${answer.status === "deferred" ? "selected" : ""}>Defer</option></select><textarea class="input" data-answer-notes rows="3" placeholder="Details, conditions or your own view…">${escapeHtml(answer.notes)}</textarea></div></article>`;
+    return `<article class="question-card${proposal ? " proposed" : ""}" data-question="${escapeHtml(question.id)}"><div class="question-head"><div><span class="kicker">Decision ${String(index + 1).padStart(2, "0")}</span><h2>${escapeHtml(question.title)}</h2>${paras(question.prompt || "")}</div><span class="question-state">${escapeHtml(answer.status)}</span></div>${proposalBlock}${confirmed}${question.recommendation ? `<div class="recommendation"><b>Recommendation:</b> ${escapeHtml(question.recommendation)}</div>` : ""}<div class="options">${options}</div><div class="answer-grid"><select class="input" data-answer-status><option value="unresolved" ${answer.status === "unresolved" ? "selected" : ""}>Unresolved</option><option value="decided" ${answer.status === "decided" ? "selected" : ""}>Decided</option><option value="deferred" ${answer.status === "deferred" ? "selected" : ""}>Defer</option></select><textarea class="input" data-answer-notes rows="3" placeholder="Details, conditions or your own view…">${escapeHtml(answer.notes)}</textarea></div></article>`;
   }).join("");
 }
 

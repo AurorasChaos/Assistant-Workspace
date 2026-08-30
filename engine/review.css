@@ -38,6 +38,8 @@ p{color:var(--muted)}
 .intro-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(280px,.7fr);gap:24px}
 .intro-copy,.summary-panel,.principle,.question-card,.custom-box{border:1px solid var(--line);border-radius:15px;background:linear-gradient(150deg,rgba(18,33,54,.98),rgba(12,23,39,.98))}
 .intro-copy{padding:30px}
+.intro-copy>p{margin:0 0 14px}
+.intro-copy>p:last-of-type{margin-bottom:18px}
 .summary-panel{padding:20px}
 .summary-panel h2{margin-top:0}
 .summary-stat{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);color:var(--muted)}
@@ -142,3 +144,5 @@ dialog label{display:block;color:var(--muted);font-size:11px;margin-top:12px}
 .proposal .proposal-note { opacity: .75; }
 .proposal-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 12px; }
 .proposal-trace { margin: 8px 0 0; font-size: 11.5px; opacity: .7; }
+.question-head>div>p{margin:0 0 10px}
+.question-head>div>p:last-of-type{margin-bottom:0}
